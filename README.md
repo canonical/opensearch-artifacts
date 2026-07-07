@@ -51,7 +51,7 @@ rockcraft pack
 OpenSearch artifacts is an open source project that warmly welcomes community contributions, suggestions, fixes, and constructive feedback.
 
 * Check our [Code of Conduct](https://ubuntu.com/community/ethos/code-of-conduct)
-* Raise software issues or feature requests in [GitHub](https://github.com/canonical/mongodb-artifacts/issues)
+* Raise software issues or feature requests in [GitHub](https://github.com/canonical/opensearch-artifacts/issues)
 * Report security issues through [LaunchPad](https://wiki.ubuntu.com/DebuggingSecurity#How%20to%20File)
 * Meet the community and chat with us on [Matrix](https://matrix.to/#/#charmhub-data-platform:ubuntu.com)
 
