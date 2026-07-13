@@ -3,12 +3,15 @@ base: core24 # the base snap is the execution environment for this snap
 
 version: '2.19.5' # just for humans, typically '1.2+git' or '1.3.2'
 
-summary: 'OpenSearch: community-driven, Apache 2.0-licensed search and analytics suite.'
+summary: |
+    OpenSearch: community-driven, Apache 2.0-licensed search and analytics
+     suite.
 description: |
-    OpenSearch is a community-driven, Apache 2.0-licensed open source search and 
-    analytics suite that makes it easy to ingest, search, visualize, and analyze data. 
-    Developers build with OpenSearch for use cases such as application search, 
-    log analytics, data observability, data ingestion, and more.
+    OpenSearch is a community-driven, Apache 2.0-licensed open source search
+     and analytics suite that makes it easy to ingest, search, visualize,
+     and analyze data.
+    Developers build with OpenSearch for use cases such as application search,
+     log analytics, data observability, data ingestion, and more.
 
 license: 'Apache-2.0'
 
@@ -285,7 +288,8 @@ parts:
       - openjdk-21-jdk-headless
     override-build: |
       # update deps
-      apt-get update; apt-get upgrade -y; apt-get autoremove --purge -y; apt-get clean -y
+      apt-get update; apt-get upgrade -y; apt-get autoremove --purge -y
+      apt-get clean -y
       update-ca-certificates -f
 
       # setup trust store
@@ -311,13 +315,15 @@ parts:
       mkdir -p "${CRAFT_PART_INSTALL}/usr/share/opensearch"
 
       mkdir -p "${CRAFT_PART_INSTALL}/etc/opensearch/"
-      mv "${CRAFT_PART_INSTALL}"/config/* "${CRAFT_PART_INSTALL}/etc/opensearch/"
+      mv "${CRAFT_PART_INSTALL}"/config/* \
+       "${CRAFT_PART_INSTALL}/etc/opensearch/"
 
       declare -a resources=(
           bin lib modules plugins manifest.yml NOTICE.txt LICENSE.txt README.md
       )
       for res in "${resources[@]}"; do
-          mv "${CRAFT_PART_INSTALL}/${res}" "${CRAFT_PART_INSTALL}/usr/share/opensearch/"
+          mv "${CRAFT_PART_INSTALL}/${res}" \
+           "${CRAFT_PART_INSTALL}/usr/share/opensearch/"
       done
       chmod -R 755 "${CRAFT_PART_INSTALL}/usr/share/opensearch/bin"
 
@@ -330,11 +336,16 @@ parts:
       done
 
     override-prime: |
-      # Copy wrappers for bin commands to fix upgrades: https://github.com/canonical/opensearch-operator/issues/537
+      # Copy wrappers for bin commands to fix upgrades:
+      # https://github.com/canonical/opensearch-operator/issues/537
       craftctl default
 
-      mv "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-plugin" "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-plugin.orig"
-      mv "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-keystore" "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-keystore.orig"
+      mv "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-plugin" \
+       "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-plugin.orig"
+      mv "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-keystore" \
+       "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-keystore.orig"
 
-      cp "${CRAFT_STAGE}/opt/opensearch/plugin-wrapper.sh" "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-plugin"
-      cp "${CRAFT_STAGE}/opt/opensearch/keystore-wrapper.sh" "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-keystore"
+      cp "${CRAFT_STAGE}/opt/opensearch/plugin-wrapper.sh" \
+       "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-plugin"
+      cp "${CRAFT_STAGE}/opt/opensearch/keystore-wrapper.sh" \
+       "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-keystore"

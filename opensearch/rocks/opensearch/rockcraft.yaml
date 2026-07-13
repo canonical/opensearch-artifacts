@@ -8,10 +8,11 @@ version: "2.19.5" # just for humans. Semantic versioning is recommended
 
 summary: "OpenSearch ROCK OCI."
 description: |
-  OpenSearch is a community-driven, Apache 2.0-licensed open source search and 
-  analytics suite that makes it easy to ingest, search, visualize, and analyze data. 
-  Developers build with OpenSearch for use cases such as application search, 
-  log analytics, data observability, data ingestion, and more.
+  OpenSearch is a community-driven, Apache 2.0-licensed open source search and
+   analytics suite that makes it easy to ingest, search, visualize,
+   and analyze data.
+  Developers build with OpenSearch for use cases such as application search,
+   log analytics, data observability, data ingestion, and more.
 
 platforms:
   # The platforms this ROCK should be built on and run on
@@ -69,12 +70,16 @@ parts:
       mkdir -p ${rocks}
 
       # move original plugin and keystore binary
-      mv "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-plugin.orig" "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-plugin"
-      mv "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-keystore.orig" "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-keystore"
+      mv "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-plugin.orig" \
+       "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-plugin"
+      mv "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-keystore.orig" \
+       "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-keystore"
 
 
       ## for deb packages
-      dpkg-query -f '${db:Status-Abbrev},${binary:Package},${Version},${source:Package},${Source:Version}\n' -W > ${rocks}/dpkg.query
+      FMT='${db:Status-Abbrev},${binary:Package},${Version},${source:Package}'
+      FMT=$FMT',${Source:Version}\n'
+      dpkg-query -f "$FMT" -W > ${rocks}/dpkg.query
 
       ## for snap packages
       cp snap.opensearch/manifest.yaml ${rocks}
@@ -113,11 +118,13 @@ parts:
       find "${PRIME_KNN_LIB_DIR}" -type d -exec chmod 755 {} \;
       find "${PRIME_KNN_LIB_DIR}" -type f -name '*.so*' -exec chmod 755 {} \;
 
-      # Symlink into /usr/lib so the dynamic linker finds them without LD_LIBRARY_PATH,
-      # which is stripped when OpenSearch runs with elevated memory lock capabilities.
+      # Symlink into /usr/lib so the dynamic linker finds
+      # them without LD_LIBRARY_PATH, which is stripped when
+      # OpenSearch runs with elevated memory lock capabilities.
       mkdir -p "${CRAFT_PRIME}/usr/lib"
       for FILE in "${PRIME_KNN_LIB_DIR}"/*.so*; do
-          ln -sf "${KNN_LIB_DIR}/$(basename "${FILE}")" "${CRAFT_PRIME}/usr/lib/"
+          ln -sf "${KNN_LIB_DIR}/$(basename "${FILE}")" \
+           "${CRAFT_PRIME}/usr/lib/"
       done
 
       # --- CA truststore ---
@@ -141,8 +148,10 @@ parts:
       # --- JVM options ---
       JVM_OPTS="${PRIME_CONF_DIR}/jvm.options"
       JAVA_LIBRARY_PATH="${KNN_LIB_DIR}:/usr/java/packages/lib:/usr/lib64:/lib64:/lib:/usr/lib"
-
-      echo "-Djavax.net.ssl.trustStore=${CONTAINER_CONF_DIR}/certificates/cacerts.p12" >> "${JVM_OPTS}"
+      SSL_OPT="-Djavax.net.ssl.trustStore="
+      # Fixing yaml lint error line
+      echo "$SSL_OPT${CONTAINER_CONF_DIR}/certificates/cacerts.p12" \
+       >> "${JVM_OPTS}"
       echo "-Djavax.net.ssl.trustStorePassword=changeit" >> "${JVM_OPTS}"
       echo "-Djava.library.path=${JAVA_LIBRARY_PATH}" >> "${JVM_OPTS}"
       chown -R 584792:584792 "${PRIME_CONF_DIR}"
