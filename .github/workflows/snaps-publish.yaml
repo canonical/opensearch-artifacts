@@ -23,7 +23,7 @@ jobs:
     with:
       path-to-snap-project-directory: ${{ matrix.snap.path }}
       artifact-prefix: packed-snap-${{ matrix.snap.name }}
-      build-timeout: 60
+      build-timeout: 90
     permissions:
       actions: read
       contents: read
