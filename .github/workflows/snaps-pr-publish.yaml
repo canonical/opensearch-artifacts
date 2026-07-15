@@ -17,10 +17,11 @@ jobs:
       fail-fast: false
       matrix:
         snap: ${{ fromJSON(needs.discover-snaps.outputs.snaps) }}
-    uses: canonical/data-platform-workflows/.github/workflows/build_snap.yaml@v49.0.2
+    uses: canonical/data-platform-workflows/.github/workflows/build_snap.yaml@v50.1.0
     with:
       path-to-snap-project-directory: ${{ matrix.snap.path }}
       artifact-prefix: packed-snap-${{ matrix.snap.name }}
+      build-timeout: 60
     permissions:
       actions: read # Needed for GitHub API call to get workflow version
       contents: read
