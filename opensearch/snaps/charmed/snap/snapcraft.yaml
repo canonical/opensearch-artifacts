@@ -19,7 +19,7 @@ grade: stable # must be 'stable' to release into candidate/stable channels
 confinement: strict # use 'strict' once you have the right plugs and slots
 
 platforms:
-  #amd64:
+  amd64:
   arm64:
 
 
@@ -109,35 +109,6 @@ apps:
     environment:
       LD_LIBRARY_PATH: "${LD_LIBRARY_PATH}:${KNN_LIB_DIR}"
 
-  security-init:
-    command: opt/opensearch/security-init.sh
-    plugs:
-      - network
-      - network-bind
-    environment:
-      JAVA_OPTS: ""
-
-  setup:
-    command: opt/opensearch/setup.sh
-
-  test-cluster-health-green:
-    command: opt/opensearch/tests/test-cluster-health-green.sh
-    plugs:
-      - network
-      - network-bind
-
-  test-node-up:
-    command: opt/opensearch/tests/test-node-up.sh
-    plugs:
-      - network
-      - network-bind
-
-  test-security-index-created:
-    command: opt/opensearch/tests/test-security-index-created.sh
-    plugs:
-      - network
-      - network-bind
-
   opensearch-bin:
     command: opt/opensearch/bin-wrapper.sh
     plugs:
@@ -153,30 +124,6 @@ apps:
       - network-bind
     environment:
       bin_script: opensearch-plugin.orig
-
-  cli:
-    command: opt/opensearch/bin-wrapper.sh
-    plugs:
-      - network
-      - network-bind
-    environment:
-      bin_script: opensearch-cli
-
-  env:
-    command: opt/opensearch/bin-wrapper.sh
-    plugs:
-      - network
-      - network-bind
-    environment:
-      bin_script: opensearch-env
-
-  env-from-file:
-    command: opt/opensearch/bin-wrapper.sh
-    plugs:
-      - network
-      - network-bind
-    environment:
-      bin_script: opensearch-env-from-file
 
   keystore:
     command: opt/opensearch/bin-wrapper.sh
@@ -207,13 +154,6 @@ apps:
     environment:
       bin_script: opensearch-shard
 
-  upgrade:
-    command: opt/opensearch/bin-wrapper.sh
-    plugs:
-      - network
-      - network-bind
-    environment:
-      bin_script: opensearch-upgrade
 
   performance-analyzer-agent:
     command: opt/opensearch/bin-wrapper.sh
@@ -288,9 +228,6 @@ parts:
     stage-packages:
       - openjdk-21-jdk-headless
     override-build: |
-      # update deps
-      apt-get update; apt-get upgrade -y; apt-get autoremove --purge -y;
-      apt-get clean -y
       update-ca-certificates -f
 
       # setup trust store
