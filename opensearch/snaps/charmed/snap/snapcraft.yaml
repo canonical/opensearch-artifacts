@@ -179,8 +179,6 @@ apps:
 parts:
   dependencies:
     plugin: nil
-    stage-snaps:
-      - yq
     stage-packages:
       - util-linux
       - curl
@@ -203,6 +201,7 @@ parts:
       - zlib1g
       - acl
       - rsync
+      - yq
 
 
   wrapper-scripts:
