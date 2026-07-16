@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+
+set -eux
+
+
+source "${OPS_ROOT}"/helpers/snap-logger.sh "hook-install"
+source "${OPS_ROOT}"/helpers/io.sh
+source "${OPS_ROOT}"/helpers/set-conf.sh
+
+
+function create_file_structure () {
+
+    # want to use the * here, so not calling dir_copy_if_not_exists
+    # Doing it before OPENSEARCH_PATH_CERTS is created, as it is set as "snap_daemon" user
+    mkdir -p "${OPENSEARCH_PATH_CONF}/"
+    copy_files_between_folder "${SNAP}/etc/opensearch/" "${OPENSEARCH_PATH_CONF}/"
+
+    declare -a folders=("${OPENSEARCH_HOME}" "${OPENSEARCH_VARLIB}" "${OPENSEARCH_VARLOG}" "${OPENSEARCH_TMPDIR}" "${OPENSEARCH_PATH_CERTS}" "${HOME}")
+    for f in "${folders[@]}"; do
+        if [ ! -d "${f}" ]; then
+            add_folder "${f}" 770
+        fi
+    done
+
+    declare -a common=(modules plugins lib)
+    for dir in "${common[@]}"; do
+        add_folder "${SNAP_DATA}/usr/share/opensearch/${dir}" 770
+        cp -r "${SNAP}/usr/share/opensearch/${dir}/"* "${SNAP_DATA}/usr/share/opensearch/${dir}/"
+    done
+
+    add_folder "${OPENSEARCH_HOME}/extensions" 770
+    add_file "${OPENSEARCH_HOME}/extensions/extensions.yml" 660
+    add_file "${OPENSEARCH_PATH_CONF}/unicast_hosts.txt" 660
+    [ -d "/dev/shm/performanceanalyzer" ] || add_folder "/dev/shm/performanceanalyzer" 770
+}
+
+
+function set_base_config_props () {
+    set_yaml_prop "${OPENSEARCH_PATH_CONF}/opensearch.yml" "path.data" "${OPENSEARCH_VARLIB}"
+    set_yaml_prop "${OPENSEARCH_PATH_CONF}/opensearch.yml" "path.logs" "${OPENSEARCH_VARLOG}"
+    set_yaml_prop "${OPENSEARCH_PATH_CONF}/opensearch.yml" "path.home" "${OPENSEARCH_HOME}"
+
+    replace_in_file "${OPENSEARCH_PATH_CONF}/jvm.options" "=logs/" "=${OPENSEARCH_VARLOG}/"
+    echo "-Duser.home=${HOME}" | tee -a "${OPENSEARCH_PATH_CONF}/jvm.options"
+}
+
+
+function set_prometheus_exporter_config_props() {
+    set_yaml_prop "${OPENSEARCH_PATH_CONF}/opensearch.yml" "prometheus.metric_name.prefix" "opensearch_"
+    set_yaml_prop "${OPENSEARCH_PATH_CONF}/opensearch.yml" "prometheus.indices" "false"
+    set_yaml_prop "${OPENSEARCH_PATH_CONF}/opensearch.yml" "prometheus.cluster.settings" "false"
+    set_yaml_prop "${OPENSEARCH_PATH_CONF}/opensearch.yml" "prometheus.nodes.filter" "_local"
+}
+
+function create_editable_cacerts_trust_store() {
+    # Copy the read only JDK provided cacerts into a writeable one
+    "${SNAP}"/usr/lib/jvm/java-21-openjdk-amd64/bin/keytool \
+        -importkeystore                                     \
+        -srckeystore  "${SNAP}/etc/ssl/certs/java/cacerts"  \
+        -destkeystore "${SNAP_DATA}"/etc/opensearch/certificates/cacerts.p12 \
+        -srcstoretype   JKS              \
+        -deststoretype  PKCS12           \
+        -srcstorepass   changeit         \
+        -deststorepass  changeit         \
+        -noprompt
+
+    echo "-Djavax.net.ssl.trustStore=/var/snap/opensearch/current/etc/opensearch/certificates/cacerts.p12" | tee -a "${OPENSEARCH_PATH_CONF}/jvm.options"
+    echo "-Djavax.net.ssl.trustStorePassword=changeit" | tee -a "${OPENSEARCH_PATH_CONF}/jvm.options"
+}
+
+
+create_file_structure
+set_base_config_props
+set_prometheus_exporter_config_props
+create_editable_cacerts_trust_store
+
+#  "${SNAP_COMMON}"
+declare -a folders=("${SNAP_DATA}")
+for f in "${folders[@]}"; do
+    chown -R snap_daemon "${f}/"*
+    chgrp -R root "${f}/"*
+done
