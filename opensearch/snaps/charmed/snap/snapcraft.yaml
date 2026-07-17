@@ -305,7 +305,7 @@ parts:
       archive="opensearch-${version}-${patch}-${release_date}-linux-x64.tar.gz"
       url="https://api.launchpad.net/devel/opensearch-releases/${series}/${version}-${patch}/files"
       curl -sk "${url}" \
-        | jq -r '.entries[].file_link' \
+        | jq -r '.entries[].self_link' \
         | sort \
         | xargs -n1 curl -skL | tar -xzvf - --strip-components=2
       # The archive is output/lp-${Version}/${archive}
