@@ -3,11 +3,13 @@ base: core26 # the base snap is the execution environment for this snap
 
 version: '3.7.0' # just for humans, typically '1.2+git' or '1.3.2'
 
+# yamllint disable rule:line-length
 summary: 'OpenSearch: community-driven, Apache 2.0-licensed search and analytics suite.'
+# yamllint disable rule:line-length
 description: |
-    OpenSearch is a community-driven, Apache 2.0-licensed open source search and 
-    analytics suite that makes it easy to ingest, search, visualize, and analyze data. 
-    Developers build with OpenSearch for use cases such as application search, 
+    OpenSearch is a community-driven, Apache 2.0-licensed open source search and
+    analytics suite that makes it easy to ingest, search, visualize, and analyze data.
+    Developers build with OpenSearch for use cases such as application search,
     log analytics, data observability, data ingestion, and more.
 
 license: 'Apache-2.0'
@@ -61,7 +63,9 @@ environment:
   SNAP_CURRENT: /snap/opensearch-standard/current
   SNAP_DATA_CURRENT: /var/snap/opensearch-standard/current
   JAVA_HOME: ${SNAP}/usr/lib/jvm/java-21-openjdk-${SNAP_ARCH}
+  # yamllint disable rule:line-length
   PATH: ${JAVA_HOME}/jre/bin:${SNAP}/usr/bin:${SNAP}/usr/sbin:${SNAP}/bin:${SNAP}/sbin:$PATH
+  # yamllint enable rule:line-length
   HOME: ${SNAP_COMMON}/home/snap_daemon
 
   SNAP_LOG_DIR: ${SNAP_COMMON}/ops/snap/logs
@@ -251,9 +255,9 @@ parts:
       - libboost-all-dev
       - libasound2
       - on amd64:
-        - libpsm2-2-compat
-        - libpsm-infinipath1
-        - libqatzip3
+          - libpsm2-2-compat
+          - libpsm-infinipath1
+          - libqatzip3
       - libcrypt1
       - libexpat1
       - zlib1g
@@ -284,6 +288,7 @@ parts:
       - jq
     stage-packages:
       - openjdk-21-jdk-headless
+    # yamllint disable rule:line-length
     override-build: |
       # update deps
       apt-get update; apt-get upgrade -y; apt-get autoremove --purge -y; apt-get clean -y
@@ -335,23 +340,23 @@ parts:
       done
       chmod -R 755 "${CRAFT_PART_INSTALL}/usr/share/opensearch/bin"
 
-      export JAVA_HOME="/usr/lib/jvm/java-21-openjdk-${CRAFT_ARCH_BUILD_FOR}" 
+      export JAVA_HOME="/usr/lib/jvm/java-21-openjdk-${CRAFT_ARCH_BUILD_FOR}"
       export OPENSEARCH_PATH_CONF="${CRAFT_PART_INSTALL}/etc/opensearch"
-      
+
       declare -a plugins_to_remove=(
           "repository-s3"
           "repository-gcs"
           "repository-azure"
           "prometheus-exporter"
       )
-      
+
       echo "Starting plugin removal via opensearch-plugin CLI..."
-      
+
       for plugin in "${plugins_to_remove[@]}"; do
           echo "Attempting to remove: ${plugin}"
-          # Execute the official removal tool. 
-          # Using '|| true' prevents the build from crashing if the plugin is not currently installed.
-          "${CRAFT_PART_INSTALL}/usr/share/opensearch/bin/opensearch-plugin" remove "${plugin}" 
+          # Execute the official removal tool.
+          # Using '|| true' prevents build crash if plugin is not currently installed.
+          "${CRAFT_PART_INSTALL}/usr/share/opensearch/bin/opensearch-plugin" remove "${plugin}"
       done
       ls "${CRAFT_PART_INSTALL}/usr/share/opensearch/plugins"
 
@@ -364,7 +369,8 @@ parts:
       done
 
     override-prime: |
-      # Copy wrappers for bin commands to fix upgrades: https://github.com/canonical/opensearch-operator/issues/537
+      # Copy wrappers for bin commands to fix upgrades:
+      # https://github.com/canonical/opensearch-operator/issues/537
       craftctl default
 
       mv "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-plugin" "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-plugin.orig"
@@ -372,3 +378,4 @@ parts:
 
       cp "${CRAFT_STAGE}/opt/opensearch/plugin-wrapper.sh" "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-plugin"
       cp "${CRAFT_STAGE}/opt/opensearch/keystore-wrapper.sh" "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-keystore"
+    # yamllint enable rule:line-length
