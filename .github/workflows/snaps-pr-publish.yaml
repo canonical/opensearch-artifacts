@@ -79,7 +79,6 @@ jobs:
     name: Publish snap to PR branch | ${{ matrix.snap.name }}
     needs:
       - discover-snaps
-      - build-snaps
       - test-snaps
     strategy:
       fail-fast: false
