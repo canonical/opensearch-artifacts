@@ -10,21 +10,6 @@ jobs:
   discover-snaps:
     uses: ./.github/workflows/snaps-discover.yaml
 
-  build-snaps:
-    name: Build snap | ${{ matrix.snap.name }}
-    needs: discover-snaps
-    strategy:
-      fail-fast: false
-      matrix:
-        snap: ${{ fromJSON(needs.discover-snaps.outputs.snaps) }}
-    uses: canonical/data-platform-workflows/.github/workflows/build_snap.yaml@v49.0.2
-    with:
-      path-to-snap-project-directory: ${{ matrix.snap.path }}
-      artifact-prefix: packed-snap-${{ matrix.snap.name }}
-    permissions:
-      actions: read # Needed for GitHub API call to get workflow version
-      contents: read
-
   test-snaps:
     name: Build and test ${{ matrix.snap.name }} snap | ${{ matrix.runner.platform }}
     runs-on: ${{ matrix.runner.label }}
