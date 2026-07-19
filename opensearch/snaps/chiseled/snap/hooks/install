@@ -54,7 +54,7 @@ function set_base_config_props () {
 
 function create_editable_cacerts_trust_store() {
     # Copy the read only JDK provided cacerts into a writeable one
-    "${SNAP}"/usr/lib/jvm/java-21-openjdk-amd64/bin/keytool \
+    "${JAVA_HOME}"/bin/keytool \
         -importkeystore                                     \
         -srckeystore  "${SNAP}/etc/ssl/certs/java/cacerts"  \
         -destkeystore "${SNAP_DATA}"/etc/opensearch/certificates/cacerts.p12 \
