@@ -32,7 +32,7 @@ plugs:
   sys-fs-cgroup-service:
     interface: system-files
     read:
-      - /sys/fs/cgroup/system.slice/snap.opensearch.daemon.service
+      - /sys/fs/cgroup/system.slice/snap.opensearch-standard.daemon.service
 
 
 slots:
@@ -58,10 +58,10 @@ hooks:
 
 
 environment:
-  SNAP_CURRENT: /snap/opensearch/current
-  SNAP_DATA_CURRENT: /var/snap/opensearch/current
+  SNAP_CURRENT: /snap/opensearch-standard/current
+  SNAP_DATA_CURRENT: /var/snap/opensearch-standard/current
   JAVA_HOME: ${SNAP}/usr/lib/jvm/java-21-openjdk-${SNAP_ARCH}
-  PATH: ${JAVA_HOME}/jre/bin:$PATH
+  PATH: ${JAVA_HOME}/jre/bin:${SNAP}/usr/bin:${SNAP}/usr/sbin:${SNAP}/bin:${SNAP}/sbin:$PATH
   HOME: ${SNAP_COMMON}/home/snap_daemon
 
   SNAP_LOG_DIR: ${SNAP_COMMON}/ops/snap/logs
@@ -307,11 +307,18 @@ parts:
         archive="opensearch-${version}-${patch}-${release_date}-linux-x64.tar.gz"
       fi
 
-      url="https://api.launchpad.net/1.0/opensearch-releases/${series}/${version}-${CRAFT_ARCH_BUILD_FOR}-${patch}/files"
-      curl -sk "${url}" \
-        | jq -r '.entries[].file_link' \
-        | sort \
-        | xargs -n1 curl -skL > "${archive}"
+      url="https://api.launchpad.net/devel/opensearch-releases/${series}/${version}-${CRAFT_ARCH_BUILD_FOR}-${patch}/files"
+
+      # Use local HTTP cache if available to avoid re-downloading the large tarball
+      cache_url="${OPS_TARBALL_CACHE_URL:-}"
+      if [ -n "${cache_url}" ]; then
+        curl -skL "${cache_url}/${archive}" -o "${archive}"
+      else
+        curl -sk "${url}" \
+          | jq -r '.entries[].file_link' \
+          | sort \
+          | xargs -n1 curl -skL > "${archive}"
+      fi
       # The archive is output/lp-${Version}/${archive}
       tar -xzvf "${archive}" -C "${CRAFT_PART_INSTALL}/" --strip-components=1
 
@@ -321,7 +328,7 @@ parts:
       mv "${CRAFT_PART_INSTALL}"/config/* "${CRAFT_PART_INSTALL}/etc/opensearch/"
 
       declare -a resources=(
-          bin lib modules plugins manifest.yml NOTICE.txt LICENSE.txt README.md
+          bin lib modules plugins agent manifest.yml NOTICE.txt LICENSE.txt README.md
       )
       for res in "${resources[@]}"; do
           mv "${CRAFT_PART_INSTALL}/${res}" "${CRAFT_PART_INSTALL}/usr/share/opensearch/"
