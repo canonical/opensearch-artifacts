@@ -14,7 +14,7 @@ function remove_yaml_prop() {
         key_path=".${key_path}"
     fi
 
-    "${SNAP}"/bin/yq -i "del(${key_path})" "${target_file}"
+    "${SNAP}"/usr/bin/yq -y -i "del(${key_path})" "${target_file}"
 }
 
 
@@ -72,7 +72,7 @@ function set_yaml_prop() {
        value="\"${value}\""
     fi
 
-    "${SNAP}"/bin/yq -i "${expression} ${operator} ${value}" "${target_file}"
+    "${SNAP}"/usr/bin/yq -y -i "${expression} ${operator} ${value}" "${target_file}"
 }
 
 

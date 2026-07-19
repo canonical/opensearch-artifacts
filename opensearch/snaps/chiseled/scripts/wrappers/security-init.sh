@@ -62,7 +62,7 @@ function init_security_plugin () {
         sec_args+=("-keypass" "${tls_priv_key_admin_pass}")
     fi
 
-    source \
+    bash \
         "${OPENSEARCH_PLUGINS}/opensearch-security/tools/securityadmin.sh" \
         "${sec_args[@]}"
 }

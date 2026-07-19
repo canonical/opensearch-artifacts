@@ -34,7 +34,7 @@ plugs:
   sys-fs-cgroup-service:
     interface: system-files
     read:
-      - /sys/fs/cgroup/system.slice/snap.opensearch.daemon.service
+      - /sys/fs/cgroup/system.slice/snap.opensearch-chiseled.daemon.service
 
 
 slots:
@@ -60,10 +60,10 @@ hooks:
 
 
 environment:
-  SNAP_CURRENT: /snap/opensearch/current
-  SNAP_DATA_CURRENT: /var/snap/opensearch/current
+  SNAP_CURRENT: /snap/opensearch-chiseled/current
+  SNAP_DATA_CURRENT: /var/snap/opensearch-chiseled/current
   JAVA_HOME: ${SNAP}/usr/lib/jvm/java-21-openjdk-${SNAP_ARCH}
-  PATH: ${JAVA_HOME}/jre/bin:$PATH
+  PATH: ${JAVA_HOME}/jre/bin:${SNAP}/usr/bin:${SNAP}/usr/sbin:${SNAP}/bin:${SNAP}/sbin:$PATH
   HOME: ${SNAP_COMMON}/home/snap_daemon
 
   SNAP_LOG_DIR: ${SNAP_COMMON}/ops/snap/logs
@@ -309,7 +309,7 @@ parts:
         archive="opensearch-${version}-${patch}-${release_date}-linux-x64.tar.gz"
       fi
 
-      url="https://api.launchpad.net/1.0/opensearch-releases/${series}/${version}-${CRAFT_ARCH_BUILD_FOR}-${patch}/files"
+      url="https://api.launchpad.net/devel/opensearch-releases/${series}/${version}-${CRAFT_ARCH_BUILD_FOR}-${patch}/files"
 
       # Use local HTTP cache if available to avoid re-downloading the large tarball
       cache_url="${OPS_TARBALL_CACHE_URL:-}"
@@ -332,7 +332,7 @@ parts:
       rm -rf "${CRAFT_PART_INSTALL}/config"
 
       declare -a resources=(
-          bin lib modules plugins manifest.yml NOTICE.txt LICENSE.txt README.md
+          bin lib modules plugins agent manifest.yml NOTICE.txt LICENSE.txt README.md
       )
       for res in "${resources[@]}"; do
           mv "${CRAFT_PART_INSTALL}/${res}" "${CRAFT_PART_INSTALL}/usr/share/opensearch/"
@@ -340,15 +340,49 @@ parts:
       chmod -R 755 "${CRAFT_PART_INSTALL}/usr/share/opensearch/bin"
       export JAVA_HOME="/usr/lib/jvm/java-21-openjdk-${CRAFT_ARCH_BUILD_FOR}"
       export OPENSEARCH_PATH_CONF="${CRAFT_PART_INSTALL}/etc/opensearch"
-      
+
       PLUGIN_BIN="${CRAFT_PART_INSTALL}/usr/share/opensearch/bin/opensearch-plugin"
-      
-      declare -a essential_plugins=(
-          "opensearch-security"
+
+      # Plugins to remove in dependency-safe order (dependents before
+      # dependencies). Regenerate with scripts/helpers/find_plugins_order.sh
+      # when the OpenSearch version is bumped.
+      declare -a plugins_to_remove=(
+          "opensearch-anomaly-detection"
+          "opensearch-reports-scheduler"
+          "opensearch-ubi"
+          "repository-s3"
+          "opensearch-sql"
+          "query-insights"
+          "opensearch-cross-cluster-replication"
+          "opensearch-observability"
+          "opensearch-ltr"
+          "prometheus-exporter"
+          "opensearch-index-management"
+          "opensearch-custom-codecs"
+          "repository-azure"
+          "opensearch-skills"
+          "opensearch-flow-framework"
+          "opensearch-system-templates"
+          "opensearch-asynchronous-search"
+          "opensearch-notifications"
+          "repository-gcs"
+          "opensearch-neural-search"
+          "opensearch-knn"
+          "opensearch-performance-analyzer"
+          "opensearch-geospatial"
+          "opensearch-security-analytics"
+          "opensearch-search-relevance"
+          "opensearch-notifications-core"
+          "opensearch-ml"
+          "opensearch-alerting"
+          "opensearch-job-scheduler"
       )
-      
-      plugins_dir="${CRAFT_PART_INSTALL}/usr/share/opensearch/plugins"
-      
+
+      for p in "${plugins_to_remove[@]}"; do
+          echo "-> Removing plugin: ${p}"
+          "${PLUGIN_BIN}" remove "${p}"
+      done
+
       # Final clean-up
       rm "${archive}"
 
