@@ -1,4 +1,4 @@
-project: charmed-opensearch-snap
+project: opensearch-charmed-snap
 
 backends:
   craft:
@@ -14,7 +14,7 @@ suites:
       snap install "$CRAFT_ARTIFACT" --dangerous
       bash "$(dirname "$CRAFT_ARTIFACT")/setup-dev-env.sh"
     restore-each: |
-      snap remove charmed-opensearch --purge
+      snap remove opensearch-charmed --purge
 
 exclude:
   - .git

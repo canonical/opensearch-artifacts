@@ -3,15 +3,15 @@ summary: Charmed OpenSearch Snap Smoke Test
 execute: |
 
   # Allow the daemon to set sysctl properties at startup
-  snap set charmed-opensearch set-sysctl-props=yes
+  snap set opensearch-charmed set-sysctl-props=yes
 
   # Disable security for the smoke test (avoids needing TLS certs and
   # security index initialization that the charm would normally handle).
-  snap set charmed-opensearch init-security=no
+  snap set opensearch-charmed init-security=no
 
   # Configure the minimum settings for a single-node cluster.
   # yamllint disable rule:line-length
-  SNAP_DATA_CURRENT=/var/snap/charmed-opensearch/current
+  SNAP_DATA_CURRENT=/var/snap/opensearch-charmed/current
   # yamllint enable rule:line-length
   opensearch_yaml="${SNAP_DATA_CURRENT}/etc/opensearch/opensearch.yml"
   yq="yq"
@@ -26,7 +26,7 @@ execute: |
   $yq -y -i ".plugins.security.disabled = true" "${opensearch_yaml}"
 
   # Start the daemon
-  snap start charmed-opensearch.daemon
+  snap start opensearch-charmed.daemon
 
   # Wait for the REST API to be reachable (HTTP, not HTTPS, because
   # security is disabled).
@@ -35,7 +35,7 @@ execute: |
     retry=$((retry + 1))
     if [ $retry -ge 60 ]; then
       echo "OpenSearch daemon did not become ready in time"
-      snap logs charmed-opensearch.daemon -n=50 || true
+      snap logs opensearch-charmed.daemon -n=50 || true
       exit 1
     fi
     sleep 2

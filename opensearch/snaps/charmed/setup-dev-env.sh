@@ -10,14 +10,14 @@ fi
 
 
 function connect_interfaces () {
-    $SUDO snap connect charmed-opensearch:log-observe
-    $SUDO snap connect charmed-opensearch:mount-observe
-    $SUDO snap connect charmed-opensearch:process-control
-    $SUDO snap connect charmed-opensearch:system-observe
-    $SUDO snap connect charmed-opensearch:sys-fs-cgroup-service
+    $SUDO snap connect opensearch-charmed:log-observe
+    $SUDO snap connect opensearch-charmed:mount-observe
+    $SUDO snap connect opensearch-charmed:process-control
+    $SUDO snap connect opensearch-charmed:system-observe
+    $SUDO snap connect opensearch-charmed:sys-fs-cgroup-service
     # shmem-perf-analyzer is only available where the snap has been
     # given access to a shared-memory slot; tolerate absence.
-    $SUDO snap connect charmed-opensearch:shmem-perf-analyzer || true
+    $SUDO snap connect opensearch-charmed:shmem-perf-analyzer || true
 }
 
 
