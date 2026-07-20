@@ -219,8 +219,6 @@ parts:
   opensearch:
     plugin: nil
     after: [wrapper-scripts]
-    build-environment:
-      - OPS_TARBALL_CACHE_URL: http://10.35.197.1:8099
     build-packages:
       - ca-certificates
       - ca-certificates-java
