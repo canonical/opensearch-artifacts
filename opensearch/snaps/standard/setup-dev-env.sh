@@ -10,14 +10,14 @@ fi
 
 
 function connect_interfaces () {
-    $SUDO snap connect opensearch-standard:log-observe
-    $SUDO snap connect opensearch-standard:mount-observe
-    $SUDO snap connect opensearch-standard:process-control
-    $SUDO snap connect opensearch-standard:system-observe
-    $SUDO snap connect opensearch-standard:sys-fs-cgroup-service
+    $SUDO snap connect opensearch:log-observe
+    $SUDO snap connect opensearch:mount-observe
+    $SUDO snap connect opensearch:process-control
+    $SUDO snap connect opensearch:system-observe
+    $SUDO snap connect opensearch:sys-fs-cgroup-service
     # shmem-perf-analyzer is only available where the snap has been
     # given access to a shared-memory slot; tolerate absence.
-    $SUDO snap connect opensearch-standard:shmem-perf-analyzer || true
+    $SUDO snap connect opensearch:shmem-perf-analyzer || true
 }
 
 

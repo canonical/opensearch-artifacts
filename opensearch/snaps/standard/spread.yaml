@@ -1,4 +1,4 @@
-project: opensearch-standard-snap
+project: opensearch-snap
 
 backends:
   craft:
@@ -14,7 +14,7 @@ suites:
       snap install "$CRAFT_ARTIFACT" --dangerous
       bash "$(dirname "$CRAFT_ARTIFACT")/setup-dev-env.sh"
     restore-each: |
-      snap remove opensearch-standard --purge
+      snap remove opensearch --purge
 
 exclude:
   - .git
