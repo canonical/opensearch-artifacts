@@ -76,15 +76,8 @@ parts:
       dpkg-query -f '${db:Status-Abbrev},${binary:Package},${Version},${source:Package},${Source:Version}\n' -W > ${rocks}/dpkg.query
 
       ## for snap packages
-      # Prefer the build-info manifest when the staged snap provides it
-      # (snap.<name>/ is only created when the snap was built with build
-      # info); otherwise fall back to the snap metadata (meta.<name>/).
-      if [ -d snap.opensearch ]; then
-        cp snap.opensearch/manifest.yaml ${rocks}
-        cp snap.opensearch/snapcraft.yaml ${rocks}
-      else
-        cp meta.opensearch/snap.yaml ${rocks}
-      fi
+      cp snap.opensearch/manifest.yaml ${rocks}
+      cp snap.opensearch/snapcraft.yaml ${rocks}
 
       # Symlink to the arch-specific JDK so JAVA_HOME is stable across
       # amd64 and arm64 builds (the snap ships java-21-openjdk-${arch}).

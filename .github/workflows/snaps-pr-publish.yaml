@@ -40,7 +40,11 @@ jobs:
       - name: snapcraft test
         id: test
         working-directory: ${{ matrix.snap.path }}
-        run: sudo --user "$USER" --preserve-env --preserve-env=PATH -- env -- CI=1 snapcraft test
+        # SNAPCRAFT_BUILD_INFO=1 embeds snap/manifest.yaml + snapcraft.yaml in
+        # the packed snap, matching the production build_snap.yaml path. Without
+        # it, PR-branch snaps lack the manifest, which breaks rocks that stage
+        # them (the snap.<name>/ metadata dir is only created when present).
+        run: sudo --user "$USER" --preserve-env --preserve-env=PATH -- env -- CI=1 SNAPCRAFT_BUILD_INFO=1 snapcraft test
 
       - name: Snapcraft logs
         if: ${{ success() || (failure() && steps.test.outcome == 'failure') }}
