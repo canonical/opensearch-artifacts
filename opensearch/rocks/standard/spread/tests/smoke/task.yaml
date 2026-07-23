@@ -1,7 +1,7 @@
 summary: OpenSearch Rock Smoke Test
 
 execute: |
-  version="$(cat "${PROJECT_PATH}/rockcraft.yaml" | yq .version)"
+  version="$(cat "${PROJECT_PATH}/rockcraft.yaml" | yq .version | tr -d '"')"
 
   # create first cm_node container
   container_0_id=$(docker run \

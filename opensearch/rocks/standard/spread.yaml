@@ -28,13 +28,13 @@ suites:
       sysctl -w net.ipv4.tcp_retries2=5
 
       # Import the rock into docker
-      version="$(cat "${PROJECT_PATH}/rockcraft.yaml" | yq .version)"
+      version="$(cat "${PROJECT_PATH}/rockcraft.yaml" | yq .version | tr -d '"')"
       rockcraft.skopeo --insecure-policy copy \
         oci-archive:"${CRAFT_ARTIFACT}" \
         docker-daemon:opensearch:"${version}"
     restore-each: |
       docker rm -f cm0 data1 cm1 2>/dev/null || true
-      version="$(cat "${PROJECT_PATH}/rockcraft.yaml" | yq .version)"
+      version="$(cat "${PROJECT_PATH}/rockcraft.yaml" | yq .version | tr -d '"')"
       docker rmi opensearch:"${version}" 2>/dev/null || true
 
 exclude:
