@@ -1,0 +1,169 @@
+# Copyright 2023 Canonical Ltd.
+# See LICENSE file for licensing details.
+name: opensearch # the name of your ROCK
+base: ubuntu@24.04 # the base environment for this ROCK
+license: Apache-2.0
+
+version: '3.7.0' # just for humans. Semantic versioning is recommended
+
+summary: 'OpenSearch ROCK OCI.'
+description: |
+  OpenSearch is a community-driven, Apache 2.0-licensed open source search and 
+  analytics suite that makes it easy to ingest, search, visualize, and analyze data. 
+  Developers build with OpenSearch for use cases such as application search, 
+  log analytics, data observability, data ingestion, and more.
+
+platforms: # The platforms this ROCK should be built on and run on
+  amd64:
+  arm64:
+
+run_user: _daemon_
+
+environment:
+  OPENSEARCH_HOME: /usr/share/opensearch
+
+  JAVA_HOME: /usr/lib/jvm/java-21-openjdk
+  OPENSEARCH_JAVA_HOME: /usr/lib/jvm/java-21-openjdk
+  OPENSEARCH_BIN: /usr/share/opensearch/bin
+  OPENSEARCH_LIB: /usr/share/opensearch/lib
+  OPENSEARCH_PLUGINS: /usr/share/opensearch/plugins
+  OPENSEARCH_MODULES: /usr/share/opensearch/modules
+
+  OPENSEARCH_PATH_CONF: /etc/opensearch
+  OPENSEARCH_PATH_CERTS: /etc/opensearch/certificates
+
+  OPENSEARCH_VARLIB: /var/lib/opensearch
+  OPENSEARCH_TMPDIR: /usr/share/tmp
+  OPENSEARCH_VARLOG: /var/log/opensearch
+
+  KNN_LIB_DIR: /usr/share/opensearch/plugins/opensearch-knn/lib
+
+services:
+  opensearch:
+    override: replace
+    startup: enabled
+    summary: Start OpenSearch
+    command: '/bin/bash /bin/start.sh'
+
+parts:
+  opensearch-snap:
+    plugin: nil
+    stage-snaps:
+      - opensearch/3/edge
+    stage-packages:
+      - base-files
+      - python3-venv
+      - python3-yaml
+      - curl
+      - lsof
+      - util-linux
+    override-prime: |
+      craftctl default
+
+      # opensearch
+      mkdir -p data
+      mkdir -p extensions
+
+      # enable security monitoring
+      rocks=usr/share/rocks/
+      mkdir -p ${rocks}
+
+      # move original plugin and keystore binary
+      mv "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-plugin.orig" "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-plugin"
+      mv "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-keystore.orig" "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-keystore"
+
+      ## for deb packages
+      dpkg-query -f '${db:Status-Abbrev},${binary:Package},${Version},${source:Package},${Source:Version}\n' -W > ${rocks}/dpkg.query
+
+      ## for snap packages
+      # Prefer the build-info manifest when the staged snap provides it
+      # (snap.<name>/ is only created when the snap was built with build
+      # info); otherwise fall back to the snap metadata (meta.<name>/).
+      if [ -d snap.opensearch ]; then
+        cp snap.opensearch/manifest.yaml ${rocks}
+        cp snap.opensearch/snapcraft.yaml ${rocks}
+      else
+        cp meta.opensearch/snap.yaml ${rocks}
+      fi
+
+      # Symlink to the arch-specific JDK so JAVA_HOME is stable across
+      # amd64 and arm64 builds (the snap ships java-21-openjdk-${arch}).
+      ln -sf "java-21-openjdk-${CRAFT_ARCH_BUILD_FOR}" \
+          "${CRAFT_PRIME}/usr/lib/jvm/java-21-openjdk"
+
+  non-root-user:
+    plugin: nil
+    after: [opensearch-snap]
+    override-prime: |
+      craftctl default
+
+      # --- Daemon user ---
+      # Pebble's run_user requires a named user in /etc/passwd, not just a UID.
+      if ! id -u _daemon_ >/dev/null 2>&1; then
+        groupadd -g 584792 _daemon_ || true
+        useradd -u 584792 -g 584792 -r -s /bin/false _daemon_ || true
+      fi
+
+      # --- Directory permissions ---
+      mkdir -p /var/lib/opensearch /usr/share/tmp /var/log/opensearch
+      mkdir -p /etc/opensearch/certificates
+      install -d -o 584792 -g 584792 -m 770 \
+          "${CRAFT_PRIME}/etc/opensearch" \
+          "${CRAFT_PRIME}/opt/opensearch" \
+          "${CRAFT_PRIME}/usr/share/opensearch" \
+          "${CRAFT_PRIME}/var/lib/opensearch" \
+          "${CRAFT_PRIME}/usr/share/tmp" \
+          "${CRAFT_PRIME}/var/log/opensearch" \
+          "${CRAFT_PRIME}/etc/opensearch/certificates"
+
+      # --- k-NN native libraries ---
+      KNN_LIB_DIR="/usr/share/opensearch/plugins/opensearch-knn/lib"
+      PRIME_KNN_LIB_DIR="${CRAFT_PRIME}${KNN_LIB_DIR}"
+
+      chown -R 584792:584792 "${PRIME_KNN_LIB_DIR}"
+      find "${PRIME_KNN_LIB_DIR}" -type d -exec chmod 755 {} \;
+      find "${PRIME_KNN_LIB_DIR}" -type f -name '*.so*' -exec chmod 755 {} \;
+
+      # Symlink into /usr/lib so the dynamic linker finds them without LD_LIBRARY_PATH,
+      # which is stripped when OpenSearch runs with elevated memory lock capabilities.
+      mkdir -p "${CRAFT_PRIME}/usr/lib"
+      for FILE in "${PRIME_KNN_LIB_DIR}"/*.so*; do
+          ln -sf "${KNN_LIB_DIR}/$(basename "${FILE}")" "${CRAFT_PRIME}/usr/lib/"
+      done
+
+      # --- CA truststore ---
+      CONTAINER_CONF_DIR="/etc/opensearch"
+      PRIME_CONF_DIR="${CRAFT_PRIME}${CONTAINER_CONF_DIR}"
+      CACERTS_DEST="${PRIME_CONF_DIR}/certificates/cacerts.p12"
+      PRIME_JAVA_HOME="${CRAFT_PRIME}/usr/lib/jvm/java-21-openjdk"
+
+      "${PRIME_JAVA_HOME}/bin/keytool" \
+          -importkeystore \
+          -srckeystore "${PRIME_JAVA_HOME}/lib/security/cacerts" \
+          -destkeystore "${CACERTS_DEST}" \
+          -srcstoretype JKS \
+          -deststoretype PKCS12 \
+          -srcstorepass changeit \
+          -deststorepass changeit \
+          -noprompt
+
+      chmod 660 "${CACERTS_DEST}"
+
+      # --- JVM options ---
+      JVM_OPTS="${PRIME_CONF_DIR}/jvm.options"
+      JAVA_LIBRARY_PATH="${KNN_LIB_DIR}:/usr/java/packages/lib:/usr/lib64:/lib64:/lib:/usr/lib"
+
+      echo "-Djavax.net.ssl.trustStore=${CONTAINER_CONF_DIR}/certificates/cacerts.p12" >> "${JVM_OPTS}"
+      echo "-Djavax.net.ssl.trustStorePassword=changeit" >> "${JVM_OPTS}"
+      echo "-Djava.library.path=${JAVA_LIBRARY_PATH}" >> "${JVM_OPTS}"
+      chown -R 584792:584792 "${PRIME_CONF_DIR}"
+
+  entry:
+    plugin: dump
+    source: scripts
+    organize:
+      start.sh: usr/bin/start.sh
+      set_conf.py: usr/bin/set_conf.py
+    stage:
+      - usr/bin/start.sh
+      - usr/bin/set_conf.py
