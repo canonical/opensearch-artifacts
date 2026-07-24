@@ -5,7 +5,7 @@ set -eux
 source "${OPS_ROOT}"/helpers/snap-logger.sh "hook-post-refresh"
 
 replace_stale_jars() {
-    declare -a common=(modules plugins lib agent bin)
+    declare -a common=(modules plugins lib)
     for dir in "${common[@]}"; do
         setpriv \
             --clear-groups \

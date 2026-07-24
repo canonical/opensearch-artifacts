@@ -18,8 +18,8 @@ analytics suite that makes it easy to ingest, search, visualize, and analyze dat
 
 or:
 ```
-sudo snap install opensearch --channel=2/edge
-sudo snap connect opensearch:process-control
+sudo snap install opensearch-charmed --channel=3/edge
+sudo snap connect opensearch-charmed:process-control
 ```
 
 ### Environment configuration:
@@ -34,7 +34,7 @@ sudo sysctl -w net.ipv4.tcp_retries2=5
 #### Creating certificates:
 ```
 # create the certificates
-sudo snap run opensearch.setup          \
+sudo snap run opensearch-charmed.setup          \
     --node-name cm0                     \
     --node-roles cluster_manager,data   \
     --tls-priv-key-root-pass root1234   \
@@ -45,38 +45,38 @@ sudo snap run opensearch.setup          \
 
 #### Starting OpenSearch:
 ```
-sudo snap start opensearch.daemon
+sudo snap start opensearch-charmed.daemon
 ```
 
 #### Creating the Security Index:
 ```
-sudo snap run opensearch.security-init --tls-priv-key-admin-pass=admin1234
+sudo snap run opensearch-charmed.security-init --tls-priv-key-admin-pass=admin1234
 ```
 
 ### Testing the OpenSearch setup:
 You can either consume the REST API yourself or see if the below commands succeed, and you see that the tests `"PASSED"` successfully: 
 ```
 # Check if cluster is healthy (green):
-sudo snap run opensearch.test-cluster-health-green
+sudo snap run opensearch-charmed.test-cluster-health-green
 > ....
 > PASSED
 
 
 # Check if node is up:
-sudo snap run opensearch.test-node-up
+sudo snap run opensearch-charmed.test-node-up
 > ....
 > PASSED
 
 
 # Check if the security index is well initialised:
-sudo snap run opensearch.test-security-index-created
+sudo snap run opensearch-charmed.test-security-index-created
 > ....
 > PASSED
 ```
 
 or:
 ```
-sudo cp /var/snap/opensearch/current/etc/opensearch/certificates/node-cm0.pem ./
+sudo cp /var/snap/opensearch-charmed/current/etc/opensearch/certificates/node-cm0.pem ./
 curl --cacert node-cm0.pem -XGET https://admin:admin@localhost:9200/_cluster/health?pretty
 > {
   "cluster_name": "opensearch-cluster",

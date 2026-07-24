@@ -64,9 +64,7 @@ function start_opensearch () {
 
     configure_qat
 
-    # start — cd to OPENSEARCH_HOME so relative paths in the launcher
-    # (bin/opensearch-keystore, agent/opensearch-agent.jar) resolve correctly
-    cd "${OPENSEARCH_HOME}"
+    cd "${SNAP}/usr/share/opensearch"
     "${SNAP}"/usr/bin/setpriv \
         --clear-groups \
         --reuid snap_daemon \
