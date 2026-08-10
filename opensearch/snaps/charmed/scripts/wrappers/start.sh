@@ -64,7 +64,6 @@ function start_opensearch () {
 
     configure_qat
 
-    cd "${SNAP}/usr/share/opensearch"
     "${SNAP}"/usr/bin/setpriv \
         --clear-groups \
         --reuid snap_daemon \
