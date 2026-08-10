@@ -215,22 +215,6 @@ apps:
     environment:
       bin_script: opensearch-upgrade
 
-  performance-analyzer-agent:
-    command: opt/opensearch/bin-wrapper.sh
-    plugs:
-      - network
-      - network-bind
-    environment:
-      bin_script: opensearch-performance-analyzer/performance-analyzer-agent
-
-  performance-analyzer-agent-cli:
-    command: opt/opensearch/bin-wrapper.sh
-    plugs:
-      - network
-      - network-bind
-    environment:
-      bin_script: opensearch-performance-analyzer/performance-analyzer-agent-cli
-
   keytool:
     command: opt/opensearch/keytool-wrapper.sh
     plugs:
@@ -286,6 +270,12 @@ parts:
       - jq
     stage-packages:
       - openjdk-21-jdk-headless
+    # LOCAL DEV ONLY - REVERT BEFORE COMMIT
+    # Serves the cached tarball from the lxdbr0 gateway to skip the ~1GB
+    # download. Start with:
+    #   systemctl --user start ops-tarball-cache
+    build-environment:
+      - OPS_TARBALL_CACHE_URL: http://10.35.197.1:8099
     override-build: |
       # update deps
       apt-get update; apt-get upgrade -y; apt-get autoremove --purge -y; apt-get clean -y
@@ -344,8 +334,7 @@ parts:
       PLUGIN_BIN="${CRAFT_PART_INSTALL}/usr/share/opensearch/bin/opensearch-plugin"
 
       # Plugins to remove in dependency-safe order (dependents before
-      # dependencies). Regenerate with scripts/helpers/find_plugins_order.sh
-      # when the OpenSearch version is bumped.
+      # dependencies).
       declare -a plugins_to_remove=(
           "opensearch-anomaly-detection"
           "opensearch-reports-scheduler"

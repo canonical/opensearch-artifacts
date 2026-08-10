@@ -14,7 +14,7 @@ on:
 jobs:
   scan:
     name: Trivy scan | ${{ matrix.rock.name }} | ${{ matrix.platform }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:

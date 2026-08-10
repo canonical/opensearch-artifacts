@@ -8,7 +8,7 @@ Steps to install it locally:
 snapcraft --debug
 
 # install the snap
-sudo snap install opensearch_2.9.0_amd64.snap --dangerous --jailmode
+sudo snap install opensearch-chiseled_3.7.0_amd64.snap --dangerous --jailmode
 ```
 
 ### Environment configuration:
@@ -21,11 +21,11 @@ Now, configuring the required system settings along with connecting the interfac
 2. Manually:
     ```
     # connect interfaces
-    sudo snap connect opensearch:log-observe
-    sudo snap connect opensearch:mount-observe
-    sudo snap connect opensearch:process-control
-    sudo snap connect opensearch:system-observe
-    sudo snap connect opensearch:sys-fs-cgroup-service
+    sudo snap connect opensearch-chiseled:log-observe
+    sudo snap connect opensearch-chiseled:mount-observe
+    sudo snap connect opensearch-chiseled:process-control
+    sudo snap connect opensearch-chiseled:system-observe
+    sudo snap connect opensearch-chiseled:sys-fs-cgroup-service
    
     # system configs required by opensearch, should be set using the following way:
     sudo sysctl -w vm.swappiness=0
@@ -36,7 +36,7 @@ Now, configuring the required system settings along with connecting the interfac
 ### Set-up an OpenSearch cluster:
 ```
 # create the certificates
-sudo snap run opensearch.setup            \
+sudo snap run opensearch-chiseled.setup       \
     --node-name cm0                       \
     --node-roles cluster_manager,data     \
     --tls-priv-key-root-pass root1234     \
@@ -45,11 +45,11 @@ sudo snap run opensearch.setup            \
     --tls-init-setup yes    # this creates the root and admin certs as well.
 
 # start opensearch
-sudo snap start opensearch.daemon
+sudo snap start opensearch-chiseled.daemon
 
 # initialize the security index
 # should only be called once per cluster, or for rebuilding the security index
-sudo snap run opensearch.security-init --tls-priv-key-admin-pass=admin1234
+sudo snap run opensearch-chiseled.security-init --tls-priv-key-admin-pass=admin1234
 ```
 
 ### Test your installation:
@@ -61,13 +61,13 @@ The OpenSearch setup can be tested either in either of the following ways:
 2. Manually:
     ```
    # Check if cluster is healthy (green):
-   sudo snap run opensearch.test-cluster-health-green
+   sudo snap run opensearch-chiseled.test-cluster-health-green
    
    # Check if node is up:
-   sudo snap run opensearch.test-node-up
+   sudo snap run opensearch-chiseled.test-node-up
    
    # Check if the security index is well initialised:
-   sudo snap run opensearch.test-security-index-created
+   sudo snap run opensearch-chiseled.test-security-index-created
    ```
 
 ### For live debugging:
@@ -77,5 +77,5 @@ The OpenSearch setup can be tested either in either of the following ways:
    ```
 2. Snap logs:
    ```
-   snappy-debug scanlog --only-snap=opensearch
+   snappy-debug scanlog --only-snap=opensearch-chiseled
    ```
