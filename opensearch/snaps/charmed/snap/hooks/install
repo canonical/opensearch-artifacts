@@ -29,7 +29,7 @@ function create_file_structure () {
         fi
     done
 
-    declare -a common=(modules plugins lib agent bin)
+    declare -a common=(modules plugins lib)
     for dir in "${common[@]}"; do
         add_folder "${SNAP_DATA}/usr/share/opensearch/${dir}" 770
         cp -r "${SNAP}/usr/share/opensearch/${dir}/"* "${SNAP_DATA}/usr/share/opensearch/${dir}/"
@@ -48,6 +48,7 @@ function set_base_config_props () {
     set_yaml_prop "${OPENSEARCH_PATH_CONF}/opensearch.yml" "path.home" "${OPENSEARCH_HOME}"
 
     replace_in_file "${OPENSEARCH_PATH_CONF}/jvm.options" "=logs/" "=${OPENSEARCH_VARLOG}/"
+    replace_in_file "${OPENSEARCH_PATH_CONF}/jvm.options" "-javaagent:" "-javaagent:${SNAP_CURRENT}/usr/share/opensearch/"
     echo "-Duser.home=${HOME}" | tee -a "${OPENSEARCH_PATH_CONF}/jvm.options"
 }
 
