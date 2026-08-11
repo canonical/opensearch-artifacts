@@ -28,8 +28,6 @@ jobs:
         runner:
           - label: ubuntu-24.04       # amd64
             platform: amd64
-          - label: ubuntu-24.04-arm   # arm64
-            platform: arm64
     permissions:
       actions: read
       contents: read

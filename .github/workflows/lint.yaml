@@ -3,7 +3,7 @@
 name: Artifact lint
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: artifact-lint-${{ github.ref }}
   cancel-in-progress: true
 
 on:
