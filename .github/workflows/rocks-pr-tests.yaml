@@ -44,13 +44,12 @@ jobs:
           SNAP_CHANNEL: ${{ inputs.snap-channel }}
         run: .github/scripts/retarget-rock-stage-snaps.sh
       
-      # TODO: Add test rock in a separate PR
-      #- name: Test rock
-      #  uses: ./.github/actions/test-rock
-      #  with:
-      #    rock-name: ${{ matrix.rock.name }}
-      #    rock-path: ${{ matrix.rock.path }}
-      #    runner: ${{ matrix.runner.label }}
+      - name: Test rock
+        uses: ./.github/actions/test-rock
+        with:
+          rock-name: ${{ matrix.rock.name }}
+          rock-path: ${{ matrix.rock.path }}
+          runner: ${{ matrix.runner.label }}
 
       # The spread test builds the rock and we upload the artifact
       - name: Upload rock for Trivy
