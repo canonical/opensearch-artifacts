@@ -12,10 +12,10 @@ suites:
     prepare-each: |
       apt update
       apt install -y curl jq
-      # Docker may already be installed on CI runners as docker-ce/containerd.io.
-      # Installing docker.io there fails (containerd.io Conflicts: containerd),
-      # so only install the packaged Docker when no docker binary is present
-      # (e.g. on a fresh LXD VM used by the craft backend locally).
+      # Docker may already be present on CI runners as docker-ce +
+      # containerd.io. Installing docker.io there fails (containerd.io
+      # Conflicts: containerd), so only install the packaged Docker when no
+      # docker binary is present (e.g. a fresh LXD VM from the craft backend).
       if ! command -v docker >/dev/null 2>&1; then
         apt install -y docker.io
       fi
@@ -28,13 +28,15 @@ suites:
       sysctl -w net.ipv4.tcp_retries2=5
 
       # Import the rock into docker
-      version="$(cat "${PROJECT_PATH}/rockcraft.yaml" | yq .version | tr -d '"')"
+      version="$(cat "${PROJECT_PATH}/rockcraft.yaml" \
+        | yq .version | tr -d '"')"
       rockcraft.skopeo --insecure-policy copy \
         oci-archive:"${CRAFT_ARTIFACT}" \
         docker-daemon:opensearch:"${version}"
     restore-each: |
       docker rm -f cm0 data1 cm1 2>/dev/null || true
-      version="$(cat "${PROJECT_PATH}/rockcraft.yaml" | yq .version | tr -d '"')"
+      version="$(cat "${PROJECT_PATH}/rockcraft.yaml" \
+        | yq .version | tr -d '"')"
       docker rmi opensearch:"${version}" 2>/dev/null || true
 
 exclude:

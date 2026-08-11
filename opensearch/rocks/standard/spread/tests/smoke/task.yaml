@@ -3,6 +3,9 @@ summary: OpenSearch Rock Smoke Test
 execute: |
   version="$(cat "${PROJECT_PATH}/rockcraft.yaml" | yq .version | tr -d '"')"
 
+  # Go template used to read a container's IP address.
+  ip_format='{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'
+
   # create first cm_node container
   container_0_id=$(docker run \
       -d --rm -it \
@@ -11,7 +14,7 @@ execute: |
       -p 9200:9200 \
       --name cm0 \
       opensearch:"${version}")
-  container_0_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${container_0_id}")
+  container_0_ip=$(docker inspect -f "${ip_format}" "${container_0_id}")
 
   # wait a bit for it to fully initialize
   sleep 30s
@@ -25,7 +28,7 @@ execute: |
       -p 9201:9200 \
       --name data1 \
       opensearch:"${version}")
-  container_1_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${container_1_id}")
+  container_1_ip=$(docker inspect -f "${ip_format}" "${container_1_id}")
 
   # wait a bit for it to fully initialize
   sleep 30s
@@ -53,7 +56,8 @@ execute: |
   fi
 
   # query all nodes of cluster
-  successful_nodes="$(curl -sk -XGET http://127.0.0.1:9200/_nodes | jq ._nodes.successful)"
+  successful_nodes="$(curl -sk -XGET http://127.0.0.1:9200/_nodes \
+    | jq ._nodes.successful)"
   echo "Successful nodes: ${successful_nodes}"
   if [ "${successful_nodes}" != 3 ]; then
       echo "Error: Wrong number of nodes."
