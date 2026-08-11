@@ -21,7 +21,6 @@ jobs:
         rock: ${{ fromJSON(inputs.rocks) }}
         platform:
           - amd64
-          - arm64
     permissions:
       actions: read
       contents: read
