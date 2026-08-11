@@ -3,6 +3,42 @@ summary: OpenSearch Rock Smoke Test
 execute: |
   version="$(cat "${PROJECT_PATH}/rockcraft.yaml" | yq .version | tr -d '"')"
 
+  # A node needs ~30s to answer HTTP even on fast hardware, so poll for
+  # readiness instead of sleeping a fixed amount.
+  wait_for_node() {
+      port="$1"
+      name="$2"
+      for _ in $(seq 1 60); do
+          reported="$(curl -sk --max-time 3 "http://127.0.0.1:${port}" \
+              | jq -r '.name // empty')"
+          if [ "${reported}" = "${name}" ]; then
+              echo "${name} answered on port ${port}"
+              return 0
+          fi
+          sleep 3
+      done
+      echo "Error: ${name} did not answer on port ${port} within 180s."
+      # OpenSearch logs to a file, not to stdout, so docker logs is useless.
+      docker exec "${name}" \
+          sh -c 'tail -50 /var/log/opensearch/*.log' || true
+      return 1
+  }
+
+  # Cluster formation lags node startup, so wait for the join to settle.
+  wait_for_nodes_joined() {
+      expected="$1"
+      for _ in $(seq 1 60); do
+          successful="$(curl -sk --max-time 3 http://127.0.0.1:9200/_nodes \
+              | jq -r '._nodes.successful // 0')"
+          if [ "${successful}" = "${expected}" ]; then
+              return 0
+          fi
+          sleep 3
+      done
+      echo "Error: only ${successful} of ${expected} nodes joined."
+      return 1
+  }
+
   # create first cm_node container
   container_0_id=$(docker run \
       -d --rm -it \
@@ -13,8 +49,8 @@ execute: |
       opensearch:"${version}")
   container_0_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${container_0_id}")
 
-  # wait a bit for it to fully initialize
-  sleep 30s
+  # wait for it to fully initialize
+  wait_for_node 9200 cm0
 
   # create data/voting_only node container
   container_1_id=$(docker run \
@@ -27,8 +63,8 @@ execute: |
       opensearch:"${version}")
   container_1_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${container_1_id}")
 
-  # wait a bit for it to fully initialize
-  sleep 30s
+  # wait for it to fully initialize
+  wait_for_node 9201 data1
 
   # create 2nd cm_node container
   docker run \
@@ -40,8 +76,8 @@ execute: |
       --name cm1 \
       opensearch:"${version}"
 
-  # wait a bit for it to fully initialize
-  sleep 30s
+  # wait for it to fully initialize
+  wait_for_node 9202 cm1
 
   # test node
   cluster_resp=$(curl -sk -XGET http://127.0.0.1:9200)
@@ -53,6 +89,7 @@ execute: |
   fi
 
   # query all nodes of cluster
+  wait_for_nodes_joined 3
   successful_nodes="$(curl -sk -XGET http://127.0.0.1:9200/_nodes | jq ._nodes.successful)"
   echo "Successful nodes: ${successful_nodes}"
   if [ "${successful_nodes}" != 3 ]; then
