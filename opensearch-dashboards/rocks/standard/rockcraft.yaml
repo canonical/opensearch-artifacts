@@ -1,0 +1,109 @@
+# Copyright 2025 Canonical Ltd.
+# See LICENSE file for licensing details.
+name: opensearch-dashboards
+base: ubuntu@24.04 # the base environment for this rock
+license: Apache-2.0
+
+version: '2.19.5' # just for humans. Semantic versioning is recommended
+
+summary: >-
+  OpenSearch Dashboards: community-driven OpenSearch visualization suite.
+description: |
+  OpenSearch Dashboard is a community-driven, Apache 2.0-licensed open source
+  user interface that lets you visualize your OpenSearch data and run and scale
+  your OpenSearch clusters.
+
+platforms: # the platforms this rock should be built on and run on
+  amd64:
+
+run_user: _daemon_
+
+services:
+  opensearch-dashboards:
+    override: replace
+    startup: enabled
+    summary: Start Opensearch Dashboards
+    command: '/bin/bash /bin/start.sh'
+    environment:
+      OPENSEARCH_DASHBOARDS_HOME: /usr/share/opensearch-dashboards
+      OPENSEARCH_DASHBOARDS_BIN: /usr/share/opensearch-dashboards/bin
+      OPENSEARCH_DASHBOARDS_PATH_CONF: /etc/opensearch-dashboards
+      OPENSEARCH_DASHBOARDS_VARLOG: /var/log/opensearch-dashboards
+      OPENSEARCH_DASHBOARDS_VARLIB: /var/lib/opensearch-dashboards
+      OPENSEARCH_DASHBOARDS_TMPDIR: /var/tmp/opensearch-dashboards
+      NODE_HOME: /usr/share/opensearch-dashboards/node
+
+  prometheus-exporter:
+    override: replace
+    startup: enabled
+    summary: Start Prometheus Exporter
+    command: '/bin/bash /bin/start-exporter.sh'
+    environment:
+      OPENSEARCH_DASHBOARDS_PATH_CONF: /etc/opensearch-dashboards
+      PYTHONPATH: "/usr/lib/python3/dist-packages:$PYTHONPATH"
+
+parts:
+  opensearch-dashboards-snap:
+    plugin: nil
+    stage-snaps:
+      - opensearch-dashboards/2/edge
+    stage:
+      - "-opt/opensearch-dashboards/helpers"
+      - "-opt/opensearch-dashboards/start.sh"
+    stage-packages:
+      - util-linux
+      - python3-venv
+      - curl
+    override-prime: |
+      craftctl default
+
+      # enable security monitoring
+      rocks=usr/share/rocks/
+      mkdir -p ${rocks}
+
+      ## for deb packages
+      # Format string is split only to stay within the line length limit; the
+      # single quotes keep the ${...} fields literal for dpkg-query to expand.
+      query_format='${db:Status-Abbrev},${binary:Package},${Version}'
+      query_format+=',${source:Package},${Source:Version}\n'
+      dpkg-query -f "${query_format}" -W > ${rocks}/dpkg.query
+
+      ## for snap packages
+      cp snap.opensearch-dashboards/manifest.yaml ${rocks}
+      cp snap.opensearch-dashboards/snapcraft.yaml ${rocks}
+
+  non-root-user:
+    plugin: nil
+    after: [opensearch-dashboards-snap]
+    override-prime: |
+      craftctl default
+
+      OSD_PATH_CONF="${CRAFT_PRIME}/etc/opensearch-dashboards"
+      OSD_PATH_CERT="${CRAFT_PRIME}/etc/opensearch-dashboards/certificates"
+      OSD_HOME="${CRAFT_PRIME}/usr/share/opensearch-dashboards"
+      OSD_VARLIB="${CRAFT_PRIME}/var/lib/opensearch-dashboards"
+      OSD_VARLOG="$CRAFT_PRIME/var/log/opensearch-dashboards"
+      OSD_TMPDIR="$CRAFT_PRIME/usr/share/tmp"
+
+      mkdir -p "${OSD_VARLIB}" "${OSD_VARLOG}" \
+        "${OSD_TMPDIR}" "${OSD_PATH_CERT}"
+      chown -R 584792:584792 \
+        "${OSD_PATH_CONF}" "${OSD_HOME}" "${OSD_VARLIB}" \
+        "${OSD_VARLOG}" "${OSD_TMPDIR}" "${OSD_PATH_CERT}"
+
+      chmod -R 770 "${OSD_VARLIB}" "${OSD_VARLOG}" "${OSD_TMPDIR}"
+      chmod -R 755 "${OSD_HOME}/bin"
+
+  entry:
+    plugin: dump
+    source: scripts
+    organize:
+      start.sh: usr/bin/start.sh
+      start-exporter.sh: usr/bin/start-exporter.sh
+      set-conf.sh: usr/bin/set-conf.sh
+      get-conf.sh: usr/bin/get-conf.sh
+    stage:
+      - usr/bin/start.sh
+      - usr/bin/start-exporter.sh
+      - usr/bin/set-conf.sh
+      - usr/bin/get-conf.sh
