@@ -1,0 +1,71 @@
+summary: OpenSearch Dashboards Rock Smoke Test
+
+execute: |
+  version="$(cat "${PROJECT_PATH}/rockcraft.yaml" | yq .version | tr -d '"')"
+
+  dump_diagnostics() {
+      echo "--- container state"
+      docker inspect \
+          -f 'status={{.State.Status}} exit={{.State.ExitCode}}' \
+          dashboards || true
+      echo "--- pebble services"
+      docker exec dashboards /usr/bin/pebble services || true
+      echo "--- container logs"
+      docker logs dashboards 2>&1 | tail -50 || true
+  }
+
+  # Deliberately no --rm: if the container dies, the test needs its exit code
+  # and logs to be diagnosable. restore-each removes it.
+  docker run -d \
+      -p 5601:5601 \
+      -p 9684:9684 \
+      --name dashboards \
+      opensearch-dashboards:"${version}"
+
+  # There is no OpenSearch backend for Dashboards to talk to here, so this
+  # asserts only that the container starts: its HTTP server accepts
+  # connections (any status code proves it is listening) and both Pebble
+  # services stay active. curl without --fail succeeds on any response.
+  ready=""
+  for attempt in $(seq 60); do
+      state="$(docker inspect -f '{{.State.Status}}' dashboards)"
+      if [ "${state}" != "running" ]; then
+          echo "Error: container is '${state}', expected 'running'."
+          dump_diagnostics
+          exit 1
+      fi
+      if curl -sS -o /dev/null http://127.0.0.1:5601/api/status; then
+          echo "HTTP server responded after ${attempt} attempt(s)."
+          ready="yes"
+          break
+      fi
+      sleep 2
+  done
+
+  if [ -z "${ready}" ]; then
+      echo "Error: no response from the Dashboards server within 120s."
+      dump_diagnostics
+      exit 1
+  fi
+
+  # Both services are 'startup: enabled', so Pebble must report both active.
+  services="$(docker exec dashboards /usr/bin/pebble services)"
+  echo "${services}"
+  for service in opensearch-dashboards prometheus-exporter; do
+      if ! echo "${services}" | grep -qE "^${service} +enabled +active"; then
+          echo "Error: pebble service '${service}' is not active."
+          dump_diagnostics
+          exit 1
+      fi
+  done
+
+  # Guard against a container that comes up and then crash-loops.
+  sleep 10
+  state="$(docker inspect -f '{{.State.Status}}' dashboards)"
+  if [ "${state}" != "running" ]; then
+      echo "Error: container did not stay running (now '${state}')."
+      dump_diagnostics
+      exit 1
+  fi
+
+  echo "Smoke test passed: the container starts and stays running."
