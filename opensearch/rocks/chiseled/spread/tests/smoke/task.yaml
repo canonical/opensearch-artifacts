@@ -94,7 +94,8 @@ execute: |
 
   # query all nodes of cluster
   wait_for_nodes_joined 3
-  successful_nodes="$(curl -sk -XGET http://127.0.0.1:9200/_nodes | jq ._nodes.successful)"
+  successful_nodes="$(curl -sk -XGET http://127.0.0.1:9200/_nodes | \
+    jq ._nodes.successful)"
   echo "Successful nodes: ${successful_nodes}"
   if [ "${successful_nodes}" != 3 ]; then
       echo "Error: Wrong number of nodes."
