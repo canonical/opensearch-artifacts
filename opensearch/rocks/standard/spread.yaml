@@ -27,12 +27,29 @@ suites:
       sysctl -w vm.max_map_count=262144
       sysctl -w net.ipv4.tcp_retries2=5
 
+      # Importing the rock inflates it to ~3GB in the Docker storage driver.
+      # Reclaim whatever the runner image left behind first, otherwise the
+      # daemon runs out of space mid-import and skopeo reports the resulting
+      # broken pipe as `writing blob: io: read/write on closed pipe`.
+      docker system prune --all --force || true
+      df -h /
+
       # Import the rock into docker
       version="$(cat "${PROJECT_PATH}/rockcraft.yaml" \
         | yq .version | tr -d '"')"
-      rockcraft.skopeo --insecure-policy copy \
+      if ! rockcraft.skopeo --insecure-policy copy \
         oci-archive:"${CRAFT_ARTIFACT}" \
-        docker-daemon:opensearch:"${version}"
+        docker-daemon:opensearch:"${version}"; then
+        echo "Failed to import the rock into Docker."
+        df -h /
+        docker system df || true
+        journalctl --no-pager --unit docker --lines 100 || true
+        exit 1
+      fi
+
+      # The packed project still holds a copy of the rock we no longer need.
+      rm -f "${CRAFT_ARTIFACT}"
+      df -h /
     restore-each: |
       docker rm -f cm0 data1 cm1 2>/dev/null || true
       version="$(cat "${PROJECT_PATH}/rockcraft.yaml" \

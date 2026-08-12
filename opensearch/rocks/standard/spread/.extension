@@ -100,7 +100,27 @@ allocate_lxdvm() {
 }
 
 discard_lxdvm() {
-    instance_name="$(lxc ls -f csv | grep ",$SPREAD_SYSTEM_ADDRESS " | cut -f1 -d",")"
+    # `lxc ls -f csv` emits the address column as a quoted, multi-line field
+    # when an instance has several addresses. Tests that install Docker gain a
+    # docker0 address which can be listed first, pushing the address spread
+    # connected to onto a continuation line that is not preceded by a comma.
+    # Matching ",<address> " therefore finds nothing and the instance leaks, so
+    # track the most recent name and match the address anywhere in its record.
+    # The address is matched with its trailing " (<interface>)" so that, say,
+    # 10.0.0.4 cannot match 10.0.0.42.
+    instance_name="$(
+        lxc ls -f csv -c n4 \
+            | awk -F, -v addr="$SPREAD_SYSTEM_ADDRESS" '
+                /,/ { name = $1 }
+                index($0, addr " (") { print name; exit }
+            '
+    )"
+
+    if [ -z "$instance_name" ]; then
+        echo "No instance found with address $SPREAD_SYSTEM_ADDRESS" >&2
+        return 1
+    fi
+
     lxc delete -f "$instance_name"
 }
 
