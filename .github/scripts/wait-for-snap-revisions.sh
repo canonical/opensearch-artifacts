@@ -14,7 +14,7 @@ if [ -z "$snaps" ]; then
 fi
 
 # We track both amd64 and arm64 revisions.
-archs="amd64 arm64"
+archs="amd64"
 pending=$(
   for snap in $snaps; do
     for arch in $archs; do
