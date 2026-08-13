@@ -1,7 +1,7 @@
 name: opensearch # you probably want to 'snapcraft register <name>'
 base: core24 # the base snap is the execution environment for this snap
 
-version: '2.19.5' # just for humans, typically '1.2+git' or '1.3.2'
+version: '2.19.6' # just for humans, typically '1.2+git' or '1.3.2'
 
 # yamllint disable-line rule:line-length
 summary: 'OpenSearch: community-driven, Apache 2.0-licensed search and analytics suite.'
@@ -300,14 +300,16 @@ parts:
       version="$(craftctl get version)"
       series="${version%%.*}.x"
       patch="ubuntu0"
-      release_date="20260621202602"
+      release_date="20260810164749"
+      arch="amd64"
 
       archive="opensearch-${version}-${patch}-${release_date}-linux-x64.tar.gz"
-      url="https://api.launchpad.net/devel/opensearch-releases/${series}/${version}-${patch}/files"
-      curl -sSk "${url}" \
+      url="https://api.launchpad.net/devel/opensearch-releases/${series}/${version}-${arch}-${patch}/files"
+      curl -sk "${url}" \
         | jq -r '.entries[].file_link' \
         | sort \
-        | xargs -n1 curl -sSkL | tar -xzvf - --strip-components=2
+        | xargs -n1 curl -skL > "${archive}"
+
       # The archive is output/lp-${Version}/${archive}
       tar -xzvf "${archive}" -C "${CRAFT_PART_INSTALL}/" --strip-components=1
 
