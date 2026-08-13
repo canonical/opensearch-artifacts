@@ -21,8 +21,5 @@ jobs:
       - name: Install yamllint
         run: pip install yamllint
 
-      - name: Run yamllint on snaps
-        run: yamllint --no-warnings ./opensearch/snaps/
-
-      - name: Run yamllint on rocks
-        run: yamllint --no-warnings ./opensearch/rocks/
+      - name: Run yamllint on all artifacts
+        run: yamllint --no-warnings opensearch*/
