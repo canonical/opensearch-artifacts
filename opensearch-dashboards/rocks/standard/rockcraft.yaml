@@ -4,7 +4,7 @@ name: opensearch-dashboards
 base: ubuntu@24.04 # the base environment for this rock
 license: Apache-2.0
 
-version: '2.19.5' # just for humans. Semantic versioning is recommended
+version: '2.19.6' # just for humans. Semantic versioning is recommended
 
 summary: >-
   OpenSearch Dashboards: community-driven OpenSearch visualization suite.
