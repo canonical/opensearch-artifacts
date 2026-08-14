@@ -1,0 +1,75 @@
+summary: OpenSearch Dashboards Rock Smoke Test
+
+execute: |
+  version="$(yq .version "${PROJECT_PATH}/rockcraft.yaml" | tr -d '"')"
+
+  # Dashboards takes a while to boot its Node server, so poll instead of
+  # sleeping a fixed amount. Any HTTP status counts: with no OpenSearch
+  # backend /api/status reports red and returns 503, but the server still
+  # has to come up and answer, which is what we assert here.
+  wait_for_dashboards() {
+      for _ in $(seq 1 60); do
+          if curl -s -o /dev/null --max-time 3 \
+              http://127.0.0.1:5601/api/status; then
+              echo "Dashboards answered on port 5601"
+              return 0
+          fi
+          sleep 3
+      done
+      echo "Error: Dashboards did not answer on port 5601 within 180s."
+      docker logs osd 2>&1 | tail -50 || true
+      # Dashboards logs to a file, not stdout, so check that too.
+      docker exec osd \
+          sh -c 'tail -50 /var/log/opensearch-dashboards/*.log' || true
+      return 1
+  }
+
+  # Start the container. Pebble is the entrypoint and both services are
+  # declared startup: enabled, so they come up on their own.
+  docker run \
+      -d --rm -it \
+      -p 5601:5601 \
+      --name osd \
+      opensearch-dashboards:"${version}"
+
+  wait_for_dashboards
+
+  # The container itself must still be running.
+  running="$(docker inspect -f '{{.State.Running}}' osd)"
+  if [ "${running}" != "true" ]; then
+      echo "Error: container is not running (State.Running=${running})."
+      docker logs osd 2>&1 | tail -50 || true
+      exit 1
+  fi
+
+  # The Pebble service must be active, not backing off or errored.
+  echo "=== pebble services ==="
+  docker exec osd /usr/bin/pebble services
+
+  osd_status="$(docker exec osd /usr/bin/pebble services \
+      | awk '$1 == "opensearch-dashboards" {print $3}')"
+  if [ "${osd_status}" != "active" ]; then
+      echo "Error: opensearch-dashboards service is '${osd_status}'."
+      docker exec osd /usr/bin/pebble services || true
+      docker logs osd 2>&1 | tail -50 || true
+      exit 1
+  fi
+  echo "opensearch-dashboards service is active"
+
+  # Check the version the server reports matches the rock version.
+  status_resp="$(curl -s --max-time 10 http://127.0.0.1:5601/api/status)"
+  echo -e "Status Response: \n ${status_resp}"
+
+  reported="$(echo "${status_resp}" | jq -r '.version.number // empty')"
+  if [ -z "${reported}" ]; then
+      echo "Error: could not read .version.number from /api/status."
+      exit 1
+  fi
+
+  echo "Reported version: ${reported} (rock: ${version})"
+  if [ "${reported}" != "${version}" ]; then
+      echo "Error: version mismatch: API ${reported} != rock ${version}."
+      exit 1
+  fi
+
+  echo "All smoke tests passed."

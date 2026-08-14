@@ -1,0 +1,39 @@
+project: opensearch-dashboards-rock
+
+backends:
+  craft:
+    type: craft
+    systems:
+      - ubuntu-26.04
+
+suites:
+  spread/tests/:
+    summary: General integration tests
+    prepare-each: |
+      apt update
+      apt install -y curl jq
+      # Docker may already be installed on CI runners as docker-ce plus
+      # containerd.io. Installing docker.io there fails (containerd.io
+      # Conflicts: containerd), so only install the packaged Docker when no
+      # docker binary is present (e.g. on a fresh LXD VM used by the craft
+      # backend locally).
+      if ! command -v docker >/dev/null 2>&1; then
+        apt install -y docker.io
+      fi
+      snap install yq
+      snap install rockcraft --classic --edge
+
+      # Import the rock into docker
+      version="$(yq .version "${PROJECT_PATH}/rockcraft.yaml" | tr -d '"')"
+      rockcraft.skopeo --insecure-policy copy \
+        oci-archive:"${CRAFT_ARTIFACT}" \
+        docker-daemon:opensearch-dashboards:"${version}"
+    restore-each: |
+      docker rm -f osd 2>/dev/null || true
+      version="$(yq .version "${PROJECT_PATH}/rockcraft.yaml" | tr -d '"')"
+      docker rmi opensearch-dashboards:"${version}" 2>/dev/null || true
+
+exclude:
+  - .git
+
+kill-timeout: 1h
