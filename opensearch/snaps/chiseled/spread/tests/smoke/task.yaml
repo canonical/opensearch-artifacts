@@ -1,0 +1,78 @@
+summary: OpenSearch Chiseled Snap Smoke Test
+
+execute: |
+  # Allow the daemon to set sysctl properties at startup
+  snap set opensearch-chiseled set-sysctl-props=yes
+
+  # Configure the single-node cluster and generate TLS certificates
+  # node-roles must include both cluster_manager and data: a
+  # cluster_manager-only node cannot hold shards, so the
+  # .opendistro_security index would never start.
+  snap run opensearch-chiseled.setup \
+    --node-name cm0 \
+    --node-roles cluster_manager,data \
+    --tls-init-setup yes \
+    --tls-priv-key-root-pass changeit \
+    --tls-priv-key-admin-pass changeit \
+    --tls-priv-key-node-pass changeit
+
+  # Start the daemon
+  snap start opensearch-chiseled.daemon
+
+  # Wait for the REST API to be reachable
+  retry=0
+  until curl -sk https://localhost:9200 >/dev/null 2>&1; do
+    retry=$((retry + 1))
+    if [ $retry -ge 60 ]; then
+      echo "OpenSearch daemon did not become ready in time"
+      snap logs opensearch-chiseled.daemon -n=50 || true
+      exit 1
+    fi
+    sleep 2
+  done
+
+  # Initialize the security plugin (creates the .opendistro_security index)
+  snap run opensearch-chiseled.security-init --tls-priv-key-admin-pass changeit
+
+  # Wait for the security index to be created
+  retry=0
+  until [ "$(curl -sk -o /dev/null -w '%{http_code}' \
+    https://localhost:9200/.opendistro_security -u admin:admin)" = "200" ]; do
+    retry=$((retry + 1))
+    if [ $retry -ge 30 ]; then
+      echo "Security index was not created in time"
+      snap logs opensearch-chiseled.daemon -n=50 || true
+      exit 1
+    fi
+    sleep 2
+  done
+
+  # Run the bundled test scripts
+  echo "=== test-node-up ==="
+  snap run opensearch-chiseled.test-node-up --node-name cm0
+
+  echo "=== test-cluster-health-green ==="
+  snap run opensearch-chiseled.test-cluster-health-green
+
+  echo "=== test-security-index-created ==="
+  snap run opensearch-chiseled.test-security-index-created
+
+  # Verify that only opensearch-security is installed
+  echo "=== plugins check ==="
+  plugins=$(curl -sk https://localhost:9200/_cat/plugins -u admin:admin)
+  echo "Installed plugins:"
+  echo "$plugins"
+
+  plugin_count=$(echo "$plugins" | wc -l)
+  if [ "$plugin_count" -ne 1 ]; then
+    echo "FAIL: Expected 1 plugin, got $plugin_count"
+    exit 1
+  fi
+
+  plugin_name=$(echo "$plugins" | awk '{print $2}')
+  if [ "$plugin_name" != "opensearch-security" ]; then
+    echo "FAIL: Expected opensearch-security, got $plugin_name"
+    exit 1
+  fi
+
+  echo "All smoke tests passed."
