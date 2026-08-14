@@ -11,6 +11,9 @@ on:
         required: false
         type: string
 
+permissions:
+  contents: read
+
 jobs:
   scan:
     name: Trivy scan | ${{ matrix.rock.name }} | ${{ matrix.platform }}
