@@ -10,6 +10,9 @@ on:
       - 3/edge
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 env:
   # Store channel the rocks stage their snaps from. Each rock stages the snap
   # of the same name, so the rock build below picks up the revision published
