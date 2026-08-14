@@ -5,8 +5,6 @@ execute: |
   status_url="http://localhost:5601/api/status"
   expected_version="$(yq -r '.version' "${PROJECT_PATH}/snap/snapcraft.yaml")"
 
-  # Without this the version assertions below would pass vacuously if every
-  # lookup returned an empty string.
   if [ -z "${expected_version}" ] || [ "${expected_version}" = "null" ]; then
     echo "FAIL: could not read 'version' from snapcraft.yaml"
     exit 1
@@ -17,14 +15,8 @@ execute: |
     snap logs "${snap_name}" -n=50 || true
   }
 
-  # Both apps declare 'install-mode: disable', so nothing runs after install.
   snap start "${snap_name}"
 
-  # Wait for the HTTP server to accept connections. No OpenSearch backend is
-  # reachable here, so Dashboards never completes startup and keeps answering
-  # 503 "OpenSearch Dashboards server is not ready yet". That response is
-  # still proof the server came up and is listening, which is what this
-  # asserts; curl without --fail succeeds on any response.
   retry=0
   until curl -s "${status_url}" >/dev/null 2>&1; do
     retry=$((retry + 1))
@@ -37,8 +29,6 @@ execute: |
   done
   echo "Server responded: $(curl -s "${status_url}")"
 
-  # Both daemons must be running. Startup stays 'disabled' because of
-  # install-mode, so only the current state is asserted.
   services="$(snap services "${snap_name}")"
   echo "${services}"
   for service in opensearch-dashboards-daemon exporter-daemon; do
@@ -50,11 +40,6 @@ execute: |
     fi
   done
 
-  # The installed snap must be the build declared in snapcraft.yaml, and the
-  # OpenSearch Dashboards payload inside it must really be that version. The
-  # latter catches a version bump that the tarball download in the
-  # 'opensearch-dashboards' part did not actually pick up, because the release
-  # date in its URL is hardcoded per architecture.
   manifest="/snap/${snap_name}/current/usr/share/opensearch-dashboards"
   manifest="${manifest}/manifest.yml"
   snap_version="$(snap list "${snap_name}" | awk 'NR == 2 {print $2}')"

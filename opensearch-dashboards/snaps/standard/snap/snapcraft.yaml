@@ -3,11 +3,12 @@ base: core26
 
 version: '3.7.0'
 
+# yamllint disable-line rule:line-length
 summary: 'OpenSearch Dashboards: community-driven OpenSearch visualization suite.'
 description: |
-    OpenSearch Dashboard is a community-driven, Apache 2.0-licensed open source
-    user interface that lets you visualize your OpenSearch data and run and scale
-    your OpenSearch clusters.
+    OpenSearch Dashboard is a community-driven, Apache 2.0-licensed open
+    source user interface that lets you visualize your OpenSearch data and
+    run and scale your OpenSearch clusters.
 
 grade: stable
 
@@ -23,6 +24,7 @@ package-repositories:
     components: [main]
     suites: [noble]
     key-id: 6676E3F1A76ADBE4488944BF7D1A96D4BF78C79E
+    # yamllint disable-line rule:line-length
     url: https://ppa.launchpadcontent.net/data-platform/prometheus-opensearch-dashboards-exporter/ubuntu
 
 
@@ -64,8 +66,10 @@ environment:
 
   # Read-write spaces
 
+  # yamllint disable rule:line-length
   OPENSEARCH_DASHBOARDS_RW_HOME: ${SNAP_DATA_CURRENT}/usr/share/opensearch-dashboards
   OPENSEARCH_DASHBOARDS_PATH_CONF: ${SNAP_DATA_CURRENT}/etc/opensearch-dashboards
+  # yamllint enable rule:line-length
 
   OPENSEARCH_DASHBOARDS_VARLOG: ${SNAP_COMMON}/var/log/opensearch-dashboards
   OPENSEARCH_DASHBOARDS_VARLIB: ${SNAP_COMMON}/var/lib/opensearch-dashboards
@@ -152,14 +156,17 @@ parts:
       mkdir -p "${CRAFT_PART_INSTALL}/usr/share/opensearch-dashboards"
 
       mkdir -p "${CRAFT_PART_INSTALL}/etc/opensearch-dashboards/"
-      mv "${CRAFT_PART_INSTALL}"/config/* "${CRAFT_PART_INSTALL}/etc/opensearch-dashboards/"
+      mv "${CRAFT_PART_INSTALL}"/config/* \
+        "${CRAFT_PART_INSTALL}/etc/opensearch-dashboards/"
 
       declare -a resources=(
-        assets  bin  data  manifest.yml  node  node_modules  package.json  plugins  src LICENSE.txt  NOTICE.txt  README.txt
+        assets bin data manifest.yml node node_modules package.json
+        plugins src LICENSE.txt NOTICE.txt README.txt
       )
 
       for res in "${resources[@]}"; do
-          mv "${CRAFT_PART_INSTALL}/${res}" "${CRAFT_PART_INSTALL}/usr/share/opensearch-dashboards/"
+          mv "${CRAFT_PART_INSTALL}/${res}" \
+            "${CRAFT_PART_INSTALL}/usr/share/opensearch-dashboards/"
       done
       chmod -R 755 "${CRAFT_PART_INSTALL}/usr/share/opensearch-dashboards/bin"
 
