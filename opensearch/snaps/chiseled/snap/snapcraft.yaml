@@ -270,15 +270,7 @@ parts:
       - jq
     stage-packages:
       - openjdk-21-jdk-headless
-    # LOCAL DEV ONLY - REVERT BEFORE COMMIT
-    # Serves the cached tarball from the lxdbr0 gateway to skip the ~1GB
-    # download. Start with:
-    #   systemctl --user start ops-tarball-cache
-    build-environment:
-      - OPS_TARBALL_CACHE_URL: http://10.35.197.1:8099
     override-build: |
-      # update deps
-      apt-get update; apt-get upgrade -y; apt-get autoremove --purge -y; apt-get clean -y
       update-ca-certificates -f
 
       # setup trust store
