@@ -85,8 +85,7 @@ execute: |
     exit 1
   fi
 
-  # The standard snap should retain significantly more plugins than the
-  # chiseled snap (which keeps only opensearch-security). Require at least 10.
+  # The standard snap should retain significantly more plugins.
   plugin_count=$(echo "$plugins" | wc -l)
   if [ "$plugin_count" -lt 10 ]; then
     echo "FAIL: Expected at least 10 plugins, got $plugin_count"

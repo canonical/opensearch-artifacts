@@ -290,8 +290,6 @@ parts:
       - openjdk-21-jdk-headless
     # yamllint disable rule:line-length
     override-build: |
-      # update deps
-      apt-get update; apt-get upgrade -y; apt-get autoremove --purge -y; apt-get clean -y
       update-ca-certificates -f
 
       # setup trust store
@@ -355,7 +353,6 @@ parts:
       for plugin in "${plugins_to_remove[@]}"; do
           echo "Attempting to remove: ${plugin}"
           # Execute the official removal tool.
-          # Using '|| true' prevents build crash if plugin is not currently installed.
           "${CRAFT_PART_INSTALL}/usr/share/opensearch/bin/opensearch-plugin" remove "${plugin}"
       done
       ls "${CRAFT_PART_INSTALL}/usr/share/opensearch/plugins"
