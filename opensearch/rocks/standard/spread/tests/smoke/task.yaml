@@ -47,7 +47,9 @@ execute: |
       -p 9200:9200 \
       --name cm0 \
       opensearch:"${version}")
-  container_0_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${container_0_id}")
+  container_0_ip=$(docker inspect \
+      -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' \
+      "${container_0_id}")
 
   # wait for it to fully initialize
   wait_for_node 9200 cm0
@@ -61,7 +63,9 @@ execute: |
       -p 9201:9200 \
       --name data1 \
       opensearch:"${version}")
-  container_1_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${container_1_id}")
+  container_1_ip=$(docker inspect \
+      -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' \
+      "${container_1_id}")
 
   # wait for it to fully initialize
   wait_for_node 9201 data1
@@ -90,7 +94,8 @@ execute: |
 
   # query all nodes of cluster
   wait_for_nodes_joined 3
-  successful_nodes="$(curl -sk -XGET http://127.0.0.1:9200/_nodes | jq ._nodes.successful)"
+  successful_nodes="$(curl -sk -XGET http://127.0.0.1:9200/_nodes | \
+    jq ._nodes.successful)"
   echo "Successful nodes: ${successful_nodes}"
   if [ "${successful_nodes}" != 3 ]; then
       echo "Error: Wrong number of nodes."
