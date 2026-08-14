@@ -111,6 +111,17 @@ apps:
     environment:
       LD_LIBRARY_PATH: "${LD_LIBRARY_PATH}:${KNN_LIB_DIR}"
 
+  security-init:
+    command: opt/opensearch/security-init.sh
+    plugs:
+      - network
+      - network-bind
+    environment:
+      JAVA_OPTS: ""
+
+  setup:
+    command: opt/opensearch/setup.sh
+
   opensearch-bin:
     command: opt/opensearch/bin-wrapper.sh
     plugs:
@@ -126,6 +137,30 @@ apps:
       - network-bind
     environment:
       bin_script: opensearch-plugin.orig
+
+  cli:
+    command: opt/opensearch/bin-wrapper.sh
+    plugs:
+      - network
+      - network-bind
+    environment:
+      bin_script: opensearch-cli
+
+  env:
+    command: opt/opensearch/bin-wrapper.sh
+    plugs:
+      - network
+      - network-bind
+    environment:
+      bin_script: opensearch-env
+
+  env-from-file:
+    command: opt/opensearch/bin-wrapper.sh
+    plugs:
+      - network
+      - network-bind
+    environment:
+      bin_script: opensearch-env-from-file
 
   keystore:
     command: opt/opensearch/bin-wrapper.sh
@@ -155,6 +190,14 @@ apps:
       - network-bind
     environment:
       bin_script: opensearch-shard
+
+  upgrade:
+    command: opt/opensearch/bin-wrapper.sh
+    plugs:
+      - network
+      - network-bind
+    environment:
+      bin_script: opensearch-upgrade
 
 
   performance-analyzer-agent:

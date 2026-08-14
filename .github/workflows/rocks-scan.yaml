@@ -11,10 +11,13 @@ on:
         required: false
         type: string
 
+permissions:
+  contents: read
+
 jobs:
   scan:
     name: Trivy scan | ${{ matrix.rock.name }} | ${{ matrix.platform }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:

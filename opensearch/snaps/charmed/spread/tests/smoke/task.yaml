@@ -10,20 +10,17 @@ execute: |
   snap set opensearch-charmed init-security=no
 
   # Configure the minimum settings for a single-node cluster.
-  # yamllint disable rule:line-length
   SNAP_DATA_CURRENT=/var/snap/opensearch-charmed/current
-  # yamllint enable rule:line-length
   opensearch_yaml="${SNAP_DATA_CURRENT}/etc/opensearch/opensearch.yml"
-  yq="yq"
 
-  $yq -y -i ".cluster.name = \"smoke-cluster\"" "${opensearch_yaml}"
-  $yq -y -i ".node.name = \"cm0\"" "${opensearch_yaml}"
-  $yq -y -i ".node.roles = [\"cluster_manager\", \"data\"]" "${opensearch_yaml}"
-  $yq -y -i ".network.host = \"127.0.0.1\"" "${opensearch_yaml}"
-  $yq -y -i ".discovery.seed_hosts = [\"127.0.0.1\"]" "${opensearch_yaml}"
-  $yq -y -i ".cluster.initial_cluster_manager_nodes = [\"cm0\"]" \
+  yq -y -i ".cluster.name = \"smoke-cluster\"" "${opensearch_yaml}"
+  yq -y -i ".node.name = \"cm0\"" "${opensearch_yaml}"
+  yq -y -i ".node.roles = [\"cluster_manager\", \"data\"]" "${opensearch_yaml}"
+  yq -y -i ".network.host = \"127.0.0.1\"" "${opensearch_yaml}"
+  yq -y -i ".discovery.seed_hosts = [\"127.0.0.1\"]" "${opensearch_yaml}"
+  yq -y -i ".cluster.initial_cluster_manager_nodes = [\"cm0\"]" \
     "${opensearch_yaml}"
-  $yq -y -i ".plugins.security.disabled = true" "${opensearch_yaml}"
+  yq -y -i ".plugins.security.disabled = true" "${opensearch_yaml}"
 
   # Start the daemon
   snap start opensearch-charmed.daemon
