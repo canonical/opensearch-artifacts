@@ -6,6 +6,9 @@ on:
       SNAP_STORE_TOKEN_EDGE:
         required: true
 
+permissions:
+  contents: read
+
 jobs:
   discover-snaps:
     uses: ./.github/workflows/snaps-discover.yaml

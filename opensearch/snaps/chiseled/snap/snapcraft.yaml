@@ -271,8 +271,6 @@ parts:
     stage-packages:
       - openjdk-21-jdk-headless
     override-build: |
-      # update deps
-      apt-get update; apt-get upgrade -y; apt-get autoremove --purge -y; apt-get clean -y
       update-ca-certificates -f
 
       # setup trust store

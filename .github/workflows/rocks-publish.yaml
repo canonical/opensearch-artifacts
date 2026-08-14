@@ -4,6 +4,9 @@ on:
   workflow_call:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   discover-rocks:
     uses: ./.github/workflows/rocks-discover.yaml
