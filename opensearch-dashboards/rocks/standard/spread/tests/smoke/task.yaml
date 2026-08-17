@@ -3,10 +3,6 @@ summary: OpenSearch Dashboards Rock Smoke Test
 execute: |
   version="$(yq .version "${PROJECT_PATH}/rockcraft.yaml" | tr -d '"')"
 
-  # Dashboards takes a while to boot its Node server, so poll instead of
-  # sleeping a fixed amount. Any HTTP status counts: with no OpenSearch
-  # backend /api/status reports red and returns 503, but the server still
-  # has to come up and answer, which is what we assert here.
   wait_for_dashboards() {
       for _ in $(seq 1 60); do
           if curl -s -o /dev/null --max-time 3 \
@@ -24,8 +20,6 @@ execute: |
       return 1
   }
 
-  # Start the container. Pebble is the entrypoint and both services are
-  # declared startup: enabled, so they come up on their own.
   docker run \
       -d --rm -it \
       -p 5601:5601 \
@@ -34,7 +28,6 @@ execute: |
 
   wait_for_dashboards
 
-  # The container itself must still be running.
   running="$(docker inspect -f '{{.State.Running}}' osd)"
   if [ "${running}" != "true" ]; then
       echo "Error: container is not running (State.Running=${running})."
@@ -42,7 +35,6 @@ execute: |
       exit 1
   fi
 
-  # The Pebble service must be active, not backing off or errored.
   echo "=== pebble services ==="
   docker exec osd /usr/bin/pebble services
 
@@ -56,7 +48,6 @@ execute: |
   fi
   echo "opensearch-dashboards service is active"
 
-  # Check the version the server reports matches the rock version.
   status_resp="$(curl -s --max-time 10 http://127.0.0.1:5601/api/status)"
   echo -e "Status Response: \n ${status_resp}"
 
