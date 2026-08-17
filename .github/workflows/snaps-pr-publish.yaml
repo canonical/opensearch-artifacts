@@ -85,6 +85,7 @@ jobs:
       - test-snaps
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         snap: ${{ fromJSON(needs.discover-snaps.outputs.snaps) }}
     uses: canonical/data-platform-workflows/.github/workflows/release_snap_pr.yaml@v49.0.2
