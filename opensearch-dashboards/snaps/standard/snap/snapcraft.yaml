@@ -19,15 +19,6 @@ platforms:
   arm64:
 
 
-package-repositories:
-  - type: apt
-    components: [main]
-    suites: [noble]
-    key-id: 6676E3F1A76ADBE4488944BF7D1A96D4BF78C79E
-    # yamllint disable-line rule:line-length
-    url: https://ppa.launchpadcontent.net/data-platform/prometheus-opensearch-dashboards-exporter/ubuntu
-
-
 system-usernames:
   snap_daemon: shared
 
@@ -61,7 +52,6 @@ environment:
 
   OPENSEARCH_DASHBOARDS_RO_HOME: ${SNAP_CURRENT}/usr/share/opensearch-dashboards
   OPENSEARCH_DASHBOARDS_BIN: ${OPENSEARCH_DASHBOARDS_RO_HOME}/bin
-  OPENSEARCH_DASHBOARDS_DEPS_BIN: ${SNAP_CURRENT}/usr/bin
   NODE_HOME: ${OPENSEARCH_DASHBOARDS_RO_HOME}/node
 
   # Read-write spaces
@@ -75,9 +65,6 @@ environment:
   OPENSEARCH_DASHBOARDS_VARLIB: ${SNAP_COMMON}/var/lib/opensearch-dashboards
   OPENSEARCH_DASHBOARDS_TMPDIR: ${SNAP_COMMON}/usr/share/tmp
 
-  # include the dist-packages to be able to run the exporter
-  PYTHONPATH: "$SNAP/usr/lib/python3/dist-packages:$PYTHONPATH"
-
 
 apps:
   opensearch-dashboards-daemon:
@@ -90,18 +77,6 @@ apps:
       - network
       - network-bind
 
-  exporter-daemon:
-    daemon: simple
-    after:
-      - opensearch-dashboards-daemon
-    install-mode: disable
-    command: opt/opensearch-dashboards/start-exporter.sh
-    restart-condition: always
-    restart-delay: 5s
-    plugs:
-      - network
-      - network-bind
-
 
 parts:
   dependencies:
@@ -109,7 +84,6 @@ parts:
     stage-packages:
       - util-linux
       - curl
-      - prometheus-opensearch-dashboards-exporter
       - yq
 
   wrapper-scripts:

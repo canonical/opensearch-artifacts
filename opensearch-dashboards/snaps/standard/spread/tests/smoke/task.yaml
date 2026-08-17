@@ -31,7 +31,7 @@ execute: |
 
   services="$(snap services "${snap_name}")"
   echo "${services}"
-  for service in opensearch-dashboards-daemon exporter-daemon; do
+  for service in opensearch-dashboards-daemon; do
     pattern="^${snap_name}\.${service} +[a-z]+ +active"
     if ! echo "${services}" | grep -qE "${pattern}"; then
       echo "FAIL: snap service '${service}' is not active"
