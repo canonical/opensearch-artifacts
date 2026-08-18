@@ -40,7 +40,5 @@ suites:
 
 exclude:
   - .git
-  - '*.snap'
-  - '*.rock'
 
 kill-timeout: 1h
