@@ -8,6 +8,7 @@ init_security="$(snapctl get init-security)"
 if [ -z "${init_security}" ] || [ "${init_security}" != "no" ]; then
     init_security="yes"
 fi
+
 snapctl set init-security="${init_security}"
 
 admin_password="$(snapctl get admin-password)"
@@ -19,4 +20,5 @@ set_sysctl_props="$(snapctl get set-sysctl-props)"
 if [ -z "${set_sysctl_props}" ] || [ "${set_sysctl_props}" != "yes" ]; then
     set_sysctl_props="no"
 fi
+
 snapctl set set-sysctl-props="${set_sysctl_props}"
