@@ -1,6 +1,6 @@
-# OpenSearch Dasboards Snap
-[![Release](https://github.com/canonical/opensearch-dashboards-snap/actions/workflows/release.yaml/badge.svg)](https://github.com/canonical/opensearch-dashboards-snap/actions/workflows/release.yaml)
-[![Tests](https://github.com/canonical/opensearch-dashboards-snap/actions/workflows/ci.yaml/badge.svg)](https://github.com/canonical/opensearch-dashboards-snap/actions/workflows/ci.yaml)
+# OpenSearch Dashboards Snap
+[![Publish](https://github.com/canonical/opensearch-artifacts/actions/workflows/publish.yaml/badge.svg)](https://github.com/canonical/opensearch-artifacts/actions/workflows/publish.yaml)
+[![Lint](https://github.com/canonical/opensearch-artifacts/actions/workflows/lint.yaml/badge.svg)](https://github.com/canonical/opensearch-artifacts/actions/workflows/lint.yaml)
 
 
 [//]: # (<h1 align="center">)
@@ -19,48 +19,60 @@ This is the snap package for [OpenSearch Dashboards](https://opensearch.org/docs
 
 or:
 ```
-sudo snap install opensearch-dashboards --channel=2/edge
+sudo snap install opensearch-dashboards --channel=3/edge
 ```
 
 ### Starting OpenSearch Dashboards:
 
-#### Parameters:
+#### Configuration:
 
-The following parameters are configurable for the `opensearch-dashboard` daemon:
+All settings are read from the OpenSearch Dashboards configuration file, which
+the install hook seeds into writable snap data:
 
- - `host` -- hostname or IP where the service is to be exposed (default: `localhost`)
- - `port` -- port where the service is to be exposed (default: `5601`)
- - `opensearch` -- OpenSearch instance URI to connect to (default: `https://localhost:9200`)
-
-They can be set using the `snapctl` command, before starting the application. Such as:
 ```
-sudo snap set opensearch-dashboards port=1234
+/var/snap/opensearch-dashboards/current/etc/opensearch-dashboards/opensearch_dashboards.yml
 ```
+
+Edit that file before starting the service. The commonly changed keys are:
+
+ - `server.host` -- hostname or IP where the service is exposed (default: `localhost`)
+ - `server.port` -- port where the service is exposed (default: `5601`)
+ - `opensearch.hosts` -- OpenSearch instance URI to connect to (default: `https://localhost:9200`)
+ - `opensearch.username` / `opensearch.password` -- credentials used to
+   authenticate against OpenSearch (default: `kibanaserver` / `kibanaserver`)
+
+This snap exposes no snap options, so `snap set` has no effect on it: the
+configuration file above is the only place to change settings.
 
 #### Starting up the service:
 
-Either if using the defautls (or when all parameters are set), `opensearch-dashboards` can be started
-by executing the following command
+The daemon is not started at install time. Once the configuration is in place
+(or if the defaults are acceptable), `opensearch-dashboards` can be started by
+executing the following command
 ```
-sudo snap start opensearch-dashboards.daemon
+sudo snap start opensearch-dashboards.opensearch-dashboards-daemon
 ```
 
 ### Testing the OpenSearch Dashboards setup:
 
-Opensearch Dashboards by default are started up at http://localhost:5601, with default credentials
-(user: `kibanaserver`, password: `kibanaserver`).
+OpenSearch Dashboards is by default started up at http://localhost:5601, with default
+credentials (user: `kibanaserver`, password: `kibanaserver`).
 
-If you have an Opensearch instance running with default settings (https://localhost:9200), the Dashboard
-should be able to automatically connect.
+If you have an OpenSearch instance running with default settings (https://localhost:9200),
+the Dashboard should be able to automatically connect.
 
-Any other potential connection (or other configuration information) should go to
+Any other potential connection (or other configuration information) should go into the
+`opensearch_dashboards.yml` file described in
+[Configuration](#configuration) above.
+
+Logs are written to:
 
 ```
-/snap/opensearch-dashboards/current/etc/opensearch-dashboards/opensearch_dashboards.yml
+/var/snap/opensearch-dashboards/common/var/log/opensearch-dashboards/opensearch_dashboards.log
 ```
 
 ## License
 The OpenSearch Dashboards Snap is free software, distributed under the Apache
 Software License, version 2.0. See
-[LICENSE](https://github.com/canonical/opensearch-dashboards-snap/blob/main/licenses/LICENSE-snap)
+[LICENSE](licenses/LICENSE-snap)
 for more information.
