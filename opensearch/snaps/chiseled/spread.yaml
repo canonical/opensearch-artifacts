@@ -1,0 +1,22 @@
+project: opensearch-chiseled-snap
+
+backends:
+  craft:
+    type: craft
+    systems:
+      - ubuntu-24.04
+
+suites:
+  spread/tests/:
+    summary: General integration tests
+    prepare-each: |
+      apt install -y curl
+      snap install "$CRAFT_ARTIFACT" --dangerous
+      bash "$(dirname "$CRAFT_ARTIFACT")/setup-dev-env.sh"
+    restore-each: |
+      snap remove opensearch-chiseled --purge
+
+exclude:
+  - .git
+
+kill-timeout: 1h
