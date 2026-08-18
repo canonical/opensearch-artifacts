@@ -1,0 +1,106 @@
+summary: Charmed OpenSearch Dashboards Rock Smoke Test
+
+execute: |
+  version="$(yq -r .version "${PROJECT_PATH}/rockcraft.yaml")"
+
+  wait_for_dashboards() {
+      for _ in $(seq 1 60); do
+          if curl -s -o /dev/null --max-time 3 \
+              http://127.0.0.1:5601/api/status; then
+              echo "Dashboards answered on port 5601"
+              return 0
+          fi
+          sleep 3
+      done
+      echo "Error: Dashboards did not answer on port 5601 within 180s."
+      docker logs osd 2>&1 | tail -50 || true
+      # Dashboards logs to a file, not stdout, so check that too.
+      docker exec osd \
+          sh -c 'tail -50 /var/log/opensearch-dashboards/*.log' || true
+      return 1
+  }
+
+  wait_for_exporter() {
+      for _ in $(seq 1 20); do
+          if curl -s -o /dev/null --max-time 3 \
+              http://127.0.0.1:9684/metrics; then
+              echo "Exporter answered on port 9684"
+              return 0
+          fi
+          sleep 3
+      done
+      echo "Error: exporter did not answer on port 9684 within 60s."
+      docker logs osd 2>&1 | tail -50 || true
+      return 1
+  }
+
+  check_service_active() {
+      local name="${1}"
+      local state
+      state="$(docker exec osd /usr/bin/pebble services \
+          | awk -v svc="${name}" '$1 == svc {print $3}')"
+      if [ "${state}" != "active" ]; then
+          echo "Error: ${name} service is '${state}'."
+          docker exec osd /usr/bin/pebble services || true
+          docker exec osd /usr/bin/pebble logs "${name}" -n 30 || true
+          docker logs osd 2>&1 | tail -50 || true
+          return 1
+      fi
+      echo "${name} service is active"
+  }
+
+  docker run \
+      -d --rm -it \
+      -p 5601:5601 \
+      -p 9684:9684 \
+      --name osd \
+      opensearch-dashboards-charmed:"${version}"
+
+  wait_for_dashboards
+
+  running="$(docker inspect -f '{{.State.Running}}' osd)"
+  if [ "${running}" != "true" ]; then
+      echo "Error: container is not running (State.Running=${running})."
+      docker logs osd 2>&1 | tail -50 || true
+      exit 1
+  fi
+
+  echo "=== pebble services ==="
+  docker exec osd /usr/bin/pebble services
+
+  # Both services must be active, not backing off or errored.
+  check_service_active opensearch-dashboards
+  check_service_active prometheus-exporter
+
+  reported="$(docker exec osd \
+      cat /usr/share/opensearch-dashboards/package.json | jq -r '.version')"
+  if [ -z "${reported}" ]; then
+      echo "Error: could not read the version from package.json."
+      exit 1
+  fi
+
+  echo "Reported version: ${reported} (rock: ${version})"
+  if [ "${reported}" != "${version}" ]; then
+      echo "Error: version mismatch: OSD ${reported} != rock ${version}."
+      exit 1
+  fi
+
+  logfile="/var/log/opensearch-dashboards/opensearch_dashboards.log"
+  if ! docker exec osd test -s "${logfile}"; then
+      echo "Error: ${logfile} is missing or empty."
+      docker exec osd ls -l /var/log/opensearch-dashboards/ || true
+      exit 1
+  fi
+  echo "Dashboards is writing to ${logfile}"
+
+  wait_for_exporter
+
+  metrics_resp="$(curl -s --max-time 10 http://127.0.0.1:9684/metrics)"
+  if ! echo "${metrics_resp}" | grep -q "^opensearch_dashboards_up "; then
+      echo "Error: opensearch_dashboards_up not found in exporter metrics."
+      echo "${metrics_resp}" | tail -20
+      exit 1
+  fi
+  echo "Exporter exposes opensearch_dashboards_up"
+
+  echo "All smoke tests passed."
