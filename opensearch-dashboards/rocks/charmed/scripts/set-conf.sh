@@ -9,8 +9,6 @@ function remove_yaml_prop() {
         key_path=".${key_path}"
     fi
 
-    # This is python-yq: -i/--in-place is only accepted together with an
-    # output format flag, and -y keeps the file as YAML.
     /usr/bin/yq -y -i "del(${key_path})" "${target_file}"
 }
 
