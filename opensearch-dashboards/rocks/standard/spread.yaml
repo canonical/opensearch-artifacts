@@ -11,22 +11,24 @@ suites:
     summary: General integration tests
     prepare-each: |
       apt update
-      apt install -y curl jq
+      # yq comes from the archive, not the store: the yq snap is strictly
+      # confined and cannot read the project, which spread stages under
+      # /root, so "yq .version" there fails with "permission denied".
+      apt install -y curl jq yq
 
       if ! command -v docker >/dev/null 2>&1; then
         apt install -y docker.io
       fi
-      snap install yq
       snap install rockcraft --classic --edge
 
       # Import the rock into docker
-      version="$(yq .version "${PROJECT_PATH}/rockcraft.yaml" | tr -d '"')"
+      version="$(yq -r .version "${PROJECT_PATH}/rockcraft.yaml")"
       rockcraft.skopeo --insecure-policy copy \
         oci-archive:"${CRAFT_ARTIFACT}" \
         docker-daemon:opensearch-dashboards:"${version}"
     restore-each: |
       docker rm -f osd 2>/dev/null || true
-      version="$(yq .version "${PROJECT_PATH}/rockcraft.yaml" | tr -d '"')"
+      version="$(yq -r .version "${PROJECT_PATH}/rockcraft.yaml")"
       docker rmi opensearch-dashboards:"${version}" 2>/dev/null || true
 
 exclude:

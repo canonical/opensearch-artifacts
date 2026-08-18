@@ -34,15 +34,6 @@ services:
       OPENSEARCH_DASHBOARDS_TMPDIR: /var/tmp/opensearch-dashboards
       NODE_HOME: /usr/share/opensearch-dashboards/node
 
-  prometheus-exporter:
-    override: replace
-    startup: enabled
-    summary: Start Prometheus Exporter
-    command: '/bin/bash /bin/start-exporter.sh'
-    environment:
-      OPENSEARCH_DASHBOARDS_PATH_CONF: /etc/opensearch-dashboards
-      PYTHONPATH: "/usr/lib/python3/dist-packages:$PYTHONPATH"
-
 parts:
   opensearch-dashboards-snap:
     plugin: nil
@@ -100,11 +91,7 @@ parts:
     source: scripts
     organize:
       start.sh: usr/bin/start.sh
-      start-exporter.sh: usr/bin/start-exporter.sh
       set-conf.sh: usr/bin/set-conf.sh
-      get-conf.sh: usr/bin/get-conf.sh
     stage:
       - usr/bin/start.sh
-      - usr/bin/start-exporter.sh
       - usr/bin/set-conf.sh
-      - usr/bin/get-conf.sh
