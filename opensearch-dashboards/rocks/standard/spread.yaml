@@ -11,9 +11,6 @@ suites:
     summary: General integration tests
     prepare-each: |
       apt update
-      # yq comes from the archive, not the store: the yq snap is strictly
-      # confined and cannot read the project, which spread stages under
-      # /root, so "yq .version" there fails with "permission denied".
       apt install -y curl jq yq
 
       if ! command -v docker >/dev/null 2>&1; then
