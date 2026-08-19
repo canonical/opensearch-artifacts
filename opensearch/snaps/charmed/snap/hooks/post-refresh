@@ -18,3 +18,7 @@ replace_stale_jars() {
 }
 
 replace_stale_jars
+
+# Create a dummy folder to test refresh
+mkdir -p ${SNAP_DATA}/dummy-folder
+chown 584788:root ${SNAP_DATA}/dummy-folder
