@@ -20,6 +20,7 @@ confinement: strict # use 'strict' once you have the right plugs and slots
 
 platforms:
   amd64:
+  arm64:
 
 
 system-usernames:

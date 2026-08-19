@@ -20,6 +20,7 @@ description: |
 
 platforms: # The platforms this ROCK should be built on and run on
   amd64:
+  arm64:
 
 run_user: _daemon_
 
@@ -59,7 +60,7 @@ parts:
       # extract content and rename the meta and snap directories.
       # Extraction merges through usrmerge symlinks (lib -> usr/lib)
       # like craft-parts' link_or_copy_tree does.
-      snap_file="${CRAFT_PROJECT_DIR}/opensearch-chiseled_2.19.6_amd64.snap"
+      snap_file="${CRAFT_PROJECT_DIR}/opensearch-chiseled_2.19.6_${CRAFT_ARCH_BUILD_FOR}.snap"
       temp_dir="$(mktemp -d)"
       unsquashfs -force -dest "${temp_dir}" "${snap_file}"
       mv "${temp_dir}/meta" "${temp_dir}/meta.opensearch-chiseled"
