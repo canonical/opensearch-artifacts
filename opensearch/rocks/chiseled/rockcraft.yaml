@@ -51,23 +51,8 @@ services:
 parts:
   opensearch-snap:
     plugin: nil
-    # TEMPORARY: build against the local unpublished snap. Revert to
-    # "stage-snaps: [opensearch-chiseled/2/edge]" and drop override-build.
-    override-build: |
-      craftctl default
-
-      # Unpack the local snap, replicating what stage-snaps does:
-      # extract content and rename the meta and snap directories.
-      # Extraction merges through usrmerge symlinks (lib -> usr/lib)
-      # like craft-parts' link_or_copy_tree does.
-      snap_file="${CRAFT_PROJECT_DIR}/opensearch-chiseled_2.19.6_${CRAFT_ARCH_BUILD_FOR}.snap"
-      temp_dir="$(mktemp -d)"
-      unsquashfs -force -dest "${temp_dir}" "${snap_file}"
-      mv "${temp_dir}/meta" "${temp_dir}/meta.opensearch-chiseled"
-      mv "${temp_dir}/snap" "${temp_dir}/snap.opensearch-chiseled"
-      ( cd "${temp_dir}" && tar -cf - . ) \
-        | tar -xf - -C "${CRAFT_PART_INSTALL}" --keep-directory-symlink
-      rm -rf "${temp_dir}"
+    stage-snaps:
+      - opensearch-chiseled/2/edge
     stage-packages:
       - base-files
       - python3-venv
