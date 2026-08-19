@@ -29,18 +29,18 @@ suites:
       sysctl -w net.ipv4.tcp_retries2=5
 
       # Import the rock into docker
-      version="$(yq .version "${PROJECT_PATH}/rockcraft.yaml" | tr -d '"')"
+      version="$(cat "${PROJECT_PATH}/rockcraft.yaml" \
+        | yq .version | tr -d '"')"
       rockcraft.skopeo --insecure-policy copy \
         oci-archive:"${CRAFT_ARTIFACT}" \
         docker-daemon:opensearch-chiseled:"${version}"
     restore-each: |
       docker rm -f cm0 data1 cm1 2>/dev/null || true
-      version="$(yq .version "${PROJECT_PATH}/rockcraft.yaml" | tr -d '"')"
+      version="$(cat "${PROJECT_PATH}/rockcraft.yaml" \
+        | yq .version | tr -d '"')"
       docker rmi opensearch-chiseled:"${version}" 2>/dev/null || true
 
 exclude:
   - .git
-  - '*.snap'
-  - '*.rock'
 
 kill-timeout: 1h
