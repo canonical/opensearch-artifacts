@@ -1,10 +1,10 @@
-name: opensearch-dashboards
+name: opensearch-dashboards-charmed
 base: core24
 
 version: '2.19.6'
 
 summary: >-
-  OpenSearch Dashboards: community-driven OpenSearch visualization suite.
+  Charmed OpenSearch Dashboards: OpenSearch visualization suite.
 description: |
   OpenSearch Dashboard is a community-driven, Apache 2.0-licensed open source
   user interface that lets you visualize your OpenSearch data and run and scale
@@ -17,6 +17,16 @@ confinement: strict
 platforms:
   amd64:
   arm64:
+
+
+package-repositories:
+  - type: apt
+    components: [main]
+    suites: [noble]
+    key-id: 6676E3F1A76ADBE4488944BF7D1A96D4BF78C79E
+    # URL cannot be wrapped: YAML folding would insert a space into it.
+    # yamllint disable-line rule:line-length
+    url: https://ppa.launchpadcontent.net/data-platform/prometheus-opensearch-dashboards-exporter/ubuntu
 
 
 system-usernames:
@@ -40,8 +50,8 @@ hooks:
 
 
 environment:
-  SNAP_CURRENT: /snap/opensearch-dashboards/current
-  SNAP_DATA_CURRENT: /var/snap/opensearch-dashboards/current
+  SNAP_CURRENT: /snap/opensearch-dashboards-charmed/current
+  SNAP_DATA_CURRENT: /var/snap/opensearch-dashboards-charmed/current
 
   SNAP_LOG_DIR: ${SNAP_COMMON}/ops/snap/logs
 
@@ -52,6 +62,7 @@ environment:
 
   OPENSEARCH_DASHBOARDS_RO_HOME: ${SNAP_CURRENT}/usr/share/opensearch-dashboards
   OPENSEARCH_DASHBOARDS_BIN: ${OPENSEARCH_DASHBOARDS_RO_HOME}/bin
+  OPENSEARCH_DASHBOARDS_DEPS_BIN: ${SNAP_CURRENT}/usr/bin
   NODE_HOME: ${OPENSEARCH_DASHBOARDS_RO_HOME}/node
 
   # Read-write spaces
@@ -65,6 +76,9 @@ environment:
   OPENSEARCH_DASHBOARDS_VARLIB: ${SNAP_COMMON}/var/lib/opensearch-dashboards
   OPENSEARCH_DASHBOARDS_TMPDIR: ${SNAP_COMMON}/usr/share/tmp
 
+  # include the dist-packages to be able to run the exporter
+  PYTHONPATH: "$SNAP/usr/lib/python3/dist-packages:$PYTHONPATH"
+
 
 apps:
   opensearch-dashboards-daemon:
@@ -77,6 +91,18 @@ apps:
       - network
       - network-bind
 
+  exporter-daemon:
+    daemon: simple
+    after:
+      - opensearch-dashboards-daemon
+    install-mode: disable
+    command: opt/opensearch-dashboards/start-exporter.sh
+    restart-condition: always
+    restart-delay: 5s
+    plugs:
+      - network
+      - network-bind
+
 
 parts:
   dependencies:
@@ -85,6 +111,7 @@ parts:
       - util-linux
       - curl
       - yq
+      - prometheus-opensearch-dashboards-exporter
 
   wrapper-scripts:
     plugin: nil
@@ -121,6 +148,7 @@ parts:
       fi
       archive="opensearch-dashboards-${version}-${patch}-${release_date}-${suffix}.tar.gz"
 
+      # Download Opensearch Dashboards
       milestone="dashboards-${version}-${CRAFT_ARCH_BUILD_FOR}-${patch}"
       url="https://launchpad.net/opensearch-dashboards-releases/${series}/${milestone}/+download/${archive}"
       curl -L --fail --retry 5 --retry-delay 10 --retry-connrefused \

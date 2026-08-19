@@ -1,4 +1,4 @@
-project: opensearch-dashboards-rock
+project: opensearch-dashboards-charmed-rock
 
 backends:
   craft:
@@ -32,7 +32,7 @@ suites:
       version="$(yq -r .version "${PROJECT_PATH}/rockcraft.yaml")"
       if ! rockcraft.skopeo --insecure-policy copy \
         oci-archive:"${CRAFT_ARTIFACT}" \
-        docker-daemon:opensearch-dashboards:"${version}"; then
+        docker-daemon:opensearch-dashboards-charmed:"${version}"; then
         echo "Failed to import the rock into Docker."
         df -h /
         docker system df || true
@@ -46,7 +46,7 @@ suites:
     restore-each: |
       docker rm -f dashboards 2>/dev/null || true
       version="$(yq -r .version "${PROJECT_PATH}/rockcraft.yaml")"
-      docker rmi opensearch-dashboards:"${version}" 2>/dev/null || true
+      docker rmi opensearch-dashboards-charmed:"${version}" 2>/dev/null || true
 
 exclude:
   - .git

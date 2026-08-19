@@ -1,13 +1,13 @@
 # Copyright 2025 Canonical Ltd.
 # See LICENSE file for licensing details.
-name: opensearch-dashboards
+name: opensearch-dashboards-charmed
 base: ubuntu@24.04 # the base environment for this rock
 license: Apache-2.0
 
 version: '2.19.6' # just for humans. Semantic versioning is recommended
 
 summary: >-
-  OpenSearch Dashboards: community-driven OpenSearch visualization suite.
+  Charmed OpenSearch Dashboards: OpenSearch visualization suite.
 description: |
   OpenSearch Dashboard is a community-driven, Apache 2.0-licensed open source
   user interface that lets you visualize your OpenSearch data and run and scale
@@ -34,17 +34,27 @@ services:
       OPENSEARCH_DASHBOARDS_TMPDIR: /var/tmp/opensearch-dashboards
       NODE_HOME: /usr/share/opensearch-dashboards/node
 
+  prometheus-exporter:
+    override: replace
+    startup: enabled
+    summary: Start Prometheus Exporter
+    command: '/bin/bash /bin/start-exporter.sh'
+    environment:
+      OPENSEARCH_DASHBOARDS_PATH_CONF: /etc/opensearch-dashboards
+      PYTHONPATH: "/usr/lib/python3/dist-packages:$PYTHONPATH"
+
 parts:
   opensearch-dashboards-snap:
     plugin: nil
     stage-snaps:
-      - opensearch-dashboards/2/edge
+      - opensearch-dashboards-charmed/2/edge
     stage:
       # The rock ships its own entrypoint scripts under /usr/bin, so the
       # snap wrappers (which rely on snap-only env vars and snapctl) are
       # dropped.
       - "-opt/opensearch-dashboards/helpers"
       - "-opt/opensearch-dashboards/start.sh"
+      - "-opt/opensearch-dashboards/start-exporter.sh"
     stage-packages:
       - util-linux
       - python3-venv
@@ -64,8 +74,8 @@ parts:
       dpkg-query -f "${query_format}" -W > ${rocks}/dpkg.query
 
       ## for snap packages
-      cp snap.opensearch-dashboards/manifest.yaml ${rocks}
-      cp snap.opensearch-dashboards/snapcraft.yaml ${rocks}
+      cp snap.opensearch-dashboards-charmed/manifest.yaml ${rocks}
+      cp snap.opensearch-dashboards-charmed/snapcraft.yaml ${rocks}
 
   non-root-user:
     plugin: nil
@@ -94,7 +104,11 @@ parts:
     source: scripts
     organize:
       start.sh: usr/bin/start.sh
+      start-exporter.sh: usr/bin/start-exporter.sh
       set-conf.sh: usr/bin/set-conf.sh
+      get-conf.sh: usr/bin/get-conf.sh
     stage:
       - usr/bin/start.sh
+      - usr/bin/start-exporter.sh
       - usr/bin/set-conf.sh
+      - usr/bin/get-conf.sh

@@ -1,4 +1,4 @@
-# OpenSearch Dashboards Snap
+# Charmed OpenSearch Dashboards Snap
 [![Publish](https://github.com/canonical/opensearch-artifacts/actions/workflows/publish.yaml/badge.svg)](https://github.com/canonical/opensearch-artifacts/actions/workflows/publish.yaml)
 [![Lint](https://github.com/canonical/opensearch-artifacts/actions/workflows/lint.yaml/badge.svg)](https://github.com/canonical/opensearch-artifacts/actions/workflows/lint.yaml)
 
@@ -12,15 +12,15 @@
 
 This is the snap package for [OpenSearch Dashboards](https://opensearch.org/docs/latest/dashboards/), a community-driven, Apache 2.0-licensed user interface that lets you visualize your OpenSearch data, together with running and scaling your OpenSearch clusters.
 
-If you need the bundled Prometheus exporter, use the
-[charmed snap](../charmed) instead.
+Compared to the [standard snap](../standard), this variant bundles the
+Prometheus exporter for OpenSearch Dashboards.
 
 ### Installation:
-[![Get it from the Snap Store](https://snapcraft.io/static/images/badges/en/snap-store-black.svg)](https://snapcraft.io/opensearch-dashboards)
+[![Get it from the Snap Store](https://snapcraft.io/static/images/badges/en/snap-store-black.svg)](https://snapcraft.io/opensearch-dashboards-charmed)
 
 or:
 ```
-sudo snap install opensearch-dashboards --channel=2/edge
+sudo snap install opensearch-dashboards-charmed --channel=2/edge
 ```
 
 Supported architectures: `amd64` and `arm64`.
@@ -29,11 +29,11 @@ Supported architectures: `amd64` and `arm64`.
 
 #### Configuration:
 
-All settings are read from the OpenSearch Dashboards configuration file, which
+Most settings are read from the OpenSearch Dashboards configuration file, which
 the install hook seeds into writable snap data:
 
 ```
-/var/snap/opensearch-dashboards/current/etc/opensearch-dashboards/opensearch_dashboards.yml
+/var/snap/opensearch-dashboards-charmed/current/etc/opensearch-dashboards/opensearch_dashboards.yml
 ```
 
 Edit that file before starting the service. The commonly changed keys are:
@@ -44,16 +44,29 @@ Edit that file before starting the service. The commonly changed keys are:
  - `opensearch.username` / `opensearch.password` -- credentials used to
    authenticate against OpenSearch (default: `kibanaserver` / `kibanaserver`)
 
-This snap exposes no snap options, so `snap set` has no effect on it: the
-configuration file above is the only place to change settings.
+In addition, the snap exposes a single snap option, used by the bundled
+Prometheus exporter when it connects to Dashboards:
+
+ - `scheme` -- `http` or `https` (default: `http`)
+
+```
+sudo snap set opensearch-dashboards-charmed scheme=https
+```
+
+The exporter reads this option at start-up, so restart it to apply a change:
+
+```
+sudo snap restart opensearch-dashboards-charmed.exporter-daemon
+```
 
 #### Starting up the service:
 
-The daemon is not started at install time. Once the configuration is in place
-(or if the defaults are acceptable), `opensearch-dashboards` can be started by
-executing the following command
+Neither daemon is started at install time. Once the configuration is in place
+(or if the defaults are acceptable), start them with:
+
 ```
-sudo snap start opensearch-dashboards.opensearch-dashboards-daemon
+sudo snap start opensearch-dashboards-charmed.opensearch-dashboards-daemon
+sudo snap start opensearch-dashboards-charmed.exporter-daemon
 ```
 
 ### Testing the OpenSearch Dashboards setup:
@@ -68,14 +81,16 @@ Any other potential connection (or other configuration information) should go in
 `opensearch_dashboards.yml` file described in
 [Configuration](#configuration) above.
 
+The Prometheus exporter serves metrics on http://localhost:9684/metrics.
+
 Logs are written to:
 
 ```
-/var/snap/opensearch-dashboards/common/var/log/opensearch-dashboards/opensearch_dashboards.log
+/var/snap/opensearch-dashboards-charmed/common/var/log/opensearch-dashboards/opensearch_dashboards.log
 ```
 
 ## License
-The OpenSearch Dashboards Snap is free software, distributed under the Apache
+The Charmed OpenSearch Dashboards Snap is free software, distributed under the Apache
 Software License, version 2.0. See
 [LICENSE](licenses/LICENSE-snap)
 for more information.

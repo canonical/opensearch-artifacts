@@ -3,28 +3,28 @@
 
 ### Set up opensearch
 
-We recommend to install the opensearch snap, so that opensearch-dashboards
-has an opensearch instance to connect to.
+We recommend to install the opensearch snap, so that
+opensearch-dashboards-charmed has an opensearch instance to connect to.
 
 Instructions to get the opensearch snap working are detailed in the
 [OpenSearch snap README](../../../opensearch/snaps/standard/README.md).
 
 
 ### Installation:
-Steps to package and install `opensearch-dashboards` snap locally (having checked out this repo):
+Steps to package and install `opensearch-dashboards-charmed` snap locally (having checked out this repo):
 
 ```
-cd opensearch-dashboards/snaps/standard
+cd opensearch-dashboards/snaps/charmed
 
 # build and package the snap
 snapcraft pack --debug
 
 # install the snap
-sudo snap install ./opensearch-dashboards_2.19.6_amd64.snap --dangerous --jailmode
+sudo snap install ./opensearch-dashboards-charmed_2.19.6_amd64.snap --dangerous --jailmode
 ```
 
 
-## Start opensearch-dashboards
+## Start opensearch-dashboards-charmed
 
 As explained in the
 [README: Starting OpenSearch Dashboards](README.md#starting-opensearch-dashboards)
@@ -37,13 +37,13 @@ As explained in the
 ### For live debugging:
 1. The journal logs:
    ```
-   sudo sysctl -w kernel.printk_ratelimit=0 ; journalctl --follow | grep opensearch-dashboards
+   sudo sysctl -w kernel.printk_ratelimit=0 ; journalctl --follow | grep opensearch-dashboards-charmed
    ```
 2. Snap logs:
    ```
-   snap logs opensearch-dashboards -n=50 -f
+   snap logs opensearch-dashboards-charmed -n=50 -f
    ```
 3. Denials reported by snap confinement:
    ```
-   snappy-debug scanlog --only-snap=opensearch-dashboards
+   snappy-debug scanlog --only-snap=opensearch-dashboards-charmed
    ```

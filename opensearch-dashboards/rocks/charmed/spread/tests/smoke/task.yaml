@@ -1,4 +1,4 @@
-summary: OpenSearch Dashboards Rock Smoke Test
+summary: Charmed OpenSearch Dashboards Rock Smoke Test
 
 execute: |
   version="$(yq -r .version "${PROJECT_PATH}/rockcraft.yaml")"
@@ -18,13 +18,14 @@ execute: |
   # and logs to be diagnosable. restore-each removes it.
   docker run -d \
       -p 5601:5601 \
+      -p 9684:9684 \
       --name dashboards \
-      opensearch-dashboards:"${version}"
+      opensearch-dashboards-charmed:"${version}"
 
   # There is no OpenSearch backend for Dashboards to talk to here, so this
   # asserts only that the container starts: its HTTP server accepts
-  # connections (any status code proves it is listening) and the Pebble
-  # service stays active. curl without --fail succeeds on any response.
+  # connections (any status code proves it is listening) and both Pebble
+  # services stay active. curl without --fail succeeds on any response.
   ready=""
   for attempt in $(seq 60); do
       state="$(docker inspect -f '{{.State.Status}}' dashboards)"
@@ -47,10 +48,10 @@ execute: |
       exit 1
   fi
 
-  # The service is 'startup: enabled', so Pebble must report it active.
+  # Both services are 'startup: enabled', so Pebble must report both active.
   services="$(docker exec dashboards /usr/bin/pebble services)"
   echo "${services}"
-  for service in opensearch-dashboards; do
+  for service in opensearch-dashboards prometheus-exporter; do
       if ! echo "${services}" | grep -qE "^${service} +enabled +active"; then
           echo "Error: pebble service '${service}' is not active."
           dump_diagnostics
