@@ -43,7 +43,11 @@ jobs:
       - name: snapcraft test
         id: test
         working-directory: ${{ matrix.snap.path }}
+<<<<<<< HEAD
         run: sudo --user "$USER" --preserve-env --preserve-env=PATH -- env -- CI=1 SNAPCRAFT_BUILD_INFO=1 snapcraft test
+=======
+        run: sudo --user "$USER" --preserve-env --preserve-env=PATH -- env -- CI=1 SNAPCRAFT_BUILD_INFO=1  snapcraft test
+>>>>>>> 3/edge
 
       - name: Snapcraft logs
         if: ${{ success() || (failure() && steps.test.outcome == 'failure') }}
