@@ -44,14 +44,13 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-        
-      # TODO: Add test rock in a separate PR
-      #- name: Test rock
-      #  uses: ./.github/actions/test-rock
-      #  with:
-      #    rock-name: ${{ matrix.rock.name }}
-      #    rock-path: ${{ matrix.rock.path }}
-      #    runner: ${{ matrix.runner }}
+
+      - name: Test rock
+        uses: ./.github/actions/test-rock
+        with:
+          rock-name: ${{ matrix.rock.name }}
+          rock-path: ${{ matrix.rock.path }}
+          runner: ${{ matrix.runner }}
 
   # The build job already uploaded the artifact so we can use it for the trivy scan
   scan:

@@ -21,5 +21,4 @@ if [ -z "${set_sysctl_props}" ] || [ "${set_sysctl_props}" != "yes" ]; then
     set_sysctl_props="no"
 fi
 
-
 snapctl set set-sysctl-props="${set_sysctl_props}"
