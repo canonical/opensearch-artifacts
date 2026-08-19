@@ -4,10 +4,6 @@ execute: |
   # Allow the daemon to set sysctl properties at startup
   snap set opensearch-chiseled set-sysctl-props=yes
 
-  # Configure the single-node cluster and generate TLS certificates
-  # node-roles must include both cluster_manager and data: a
-  # cluster_manager-only node cannot hold shards, so the
-  # .opendistro_security index would never start.
   snap run opensearch-chiseled.setup \
     --node-name cm0 \
     --node-roles cluster_manager,data \
