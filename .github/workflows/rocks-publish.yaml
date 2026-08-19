@@ -44,7 +44,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-
+        
       - name: Test rock
         uses: ./.github/actions/test-rock
         with:

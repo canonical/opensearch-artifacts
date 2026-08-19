@@ -1,0 +1,44 @@
+project: opensearch-rock
+
+backends:
+  craft:
+    type: craft
+    systems:
+      - ubuntu-26.04
+
+suites:
+  spread/tests/:
+    summary: General integration tests
+    prepare-each: |
+      apt update
+      apt install -y curl jq
+      # Docker may already be installed on CI runners as docker-ce plus
+      # containerd.io. Installing docker.io there fails (containerd.io
+      # Conflicts: containerd), so only install the packaged Docker when no
+      # docker binary is present (e.g. on a fresh LXD VM used by the craft
+      # backend locally).
+      if ! command -v docker >/dev/null 2>&1; then
+        apt install -y docker.io
+      fi
+      snap install yq
+      snap install rockcraft --classic --edge
+
+      # Required kernel parameters for OpenSearch
+      sysctl -w vm.swappiness=0
+      sysctl -w vm.max_map_count=262144
+      sysctl -w net.ipv4.tcp_retries2=5
+
+      # Import the rock into docker
+      version="$(yq .version "${PROJECT_PATH}/rockcraft.yaml" | tr -d '"')"
+      rockcraft.skopeo --insecure-policy copy \
+        oci-archive:"${CRAFT_ARTIFACT}" \
+        docker-daemon:opensearch:"${version}"
+    restore-each: |
+      docker rm -f cm0 data1 cm1 2>/dev/null || true
+      version="$(yq .version "${PROJECT_PATH}/rockcraft.yaml" | tr -d '"')"
+      docker rmi opensearch:"${version}" 2>/dev/null || true
+
+exclude:
+  - .git
+
+kill-timeout: 1h
