@@ -1,4 +1,4 @@
-summary: Charmed OpenSearch Rock Smoke Test
+summary: Chiseled OpenSearch Rock Smoke Test
 
 execute: |
   version="$(cat "${PROJECT_PATH}/rockcraft.yaml" | yq .version | tr -d '"')"
@@ -46,7 +46,7 @@ execute: |
       -e INITIAL_CM_NODES=cm0 \
       -p 9200:9200 \
       --name cm0 \
-      opensearch-charmed:"${version}")
+      opensearch-chiseled:"${version}")
   container_0_ip=$(docker inspect \
       -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' \
       "${container_0_id}")
@@ -62,7 +62,7 @@ execute: |
       -e NODE_ROLES=data,voting_only \
       -p 9201:9200 \
       --name data1 \
-      opensearch-charmed:"${version}")
+      opensearch-chiseled:"${version}")
   container_1_ip=$(docker inspect \
       -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' \
       "${container_1_id}")
@@ -78,7 +78,7 @@ execute: |
       -e INITIAL_CM_NODES="cm0,cm1" \
       -p 9202:9200 \
       --name cm1 \
-      opensearch-charmed:"${version}"
+      opensearch-chiseled:"${version}"
 
   # wait for it to fully initialize
   wait_for_node 9202 cm1

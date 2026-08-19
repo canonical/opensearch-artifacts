@@ -48,7 +48,7 @@ jobs:
           ROCKCRAFT_FILE: ${{ matrix.rock.path }}/rockcraft.yaml
           SNAP_CHANNEL: ${{ inputs.snap-channel }}
         run: .github/scripts/retarget-rock-stage-snaps.sh
-
+      
       - name: Test rock
         uses: ./.github/actions/test-rock
         with:
