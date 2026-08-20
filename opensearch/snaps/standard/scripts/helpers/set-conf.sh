@@ -13,8 +13,7 @@ function remove_yaml_prop() {
     if [[ ${key_path} != ^.* ]]; then
         key_path=".${key_path}"
     fi
-
-    "${SNAP}"/bin/yq -i "del(${key_path})" "${target_file}"
+    "${SNAP}"/usr/bin/yq -y -i "del(${key_path})" "${target_file}"
 }
 
 
@@ -71,8 +70,7 @@ function set_yaml_prop() {
     elif ! [[ "${value}" =~ ^[0-9]+$ ]]  && ! [[ ${value} =~ ^\".*\"$ ]]; then
        value="\"${value}\""
     fi
-
-    "${SNAP}"/bin/yq -i "${expression} ${operator} ${value}" "${target_file}"
+    "${SNAP}"/usr/bin/yq -y -i "${expression} ${operator} ${value}" "${target_file}"
 }
 
 
