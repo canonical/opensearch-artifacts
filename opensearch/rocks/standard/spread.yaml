@@ -11,7 +11,7 @@ suites:
     summary: General integration tests
     prepare-each: |
       apt update
-      apt install -y curl jq yq
+      apt install -y curl yq
       if ! command -v docker >/dev/null 2>&1; then
         apt install -y docker.io
       fi
