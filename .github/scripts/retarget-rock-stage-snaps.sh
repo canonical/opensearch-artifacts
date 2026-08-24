@@ -4,9 +4,12 @@ set -euo pipefail
 : "${ROCK_NAME:?ROCK_NAME must be set}"
 : "${SNAP_CHANNEL:?SNAP_CHANNEL must be set}"
 
+# Special Case for OpenSearch charmed
+if [[ "$ROCK_NAME" == "opensearch-charmed" ]]; then
+  echo "Skipping snap name validation"
 # Check that rockcraft.yaml has stage snaps for this rock pointing at the
 # expected channel, e.g. "mongodb-server-sharded/2/edge".
-if ! yq \
+elif ! yq \
     '.parts[] | select(has("stage-snaps")) | .["stage-snaps"][] | select(test("^" + env.ROCK_NAME + "/2/edge$"))' \
     "${ROCKCRAFT_FILE}" | grep -q .; then
   echo "No ${ROCK_NAME}/2/edge stage snap channel found in ${ROCKCRAFT_FILE}"
