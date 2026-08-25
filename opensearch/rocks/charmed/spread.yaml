@@ -12,10 +12,7 @@ suites:
     prepare-each: |
       apt update
       apt install -y curl yq
-      # Docker may already be present on CI runners as docker-ce +
-      # containerd.io. Installing docker.io there fails (containerd.io
-      # Conflicts: containerd), so only install the packaged Docker when no
-      # docker binary is present (e.g. a fresh LXD VM from the craft backend).
+
       if ! command -v docker >/dev/null 2>&1; then
         apt install -y docker.io
       fi
@@ -26,10 +23,6 @@ suites:
       sysctl -w vm.max_map_count=262144
       sysctl -w net.ipv4.tcp_retries2=5
 
-      # Importing the rock inflates it to ~3GB in the Docker storage driver.
-      # Reclaim whatever the runner image left behind first, otherwise the
-      # daemon runs out of space mid-import and skopeo reports the resulting
-      # broken pipe as `writing blob: io: read/write on closed pipe`.
       docker system prune --all --force || true
       df -h /
 
