@@ -55,10 +55,13 @@ parts:
       - "-opt/opensearch-dashboards/helpers"
       - "-opt/opensearch-dashboards/start.sh"
       - "-opt/opensearch-dashboards/start-exporter.sh"
+      # In case a snap installs yq from snap
+      - "-bin/yq"
     stage-packages:
       - util-linux
       - python3-venv
       - curl
+      - yq
     override-prime: |
       craftctl default
 
