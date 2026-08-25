@@ -58,6 +58,7 @@ parts:
       - curl
       - lsof
       - util-linux
+      - yq
     override-prime: |
       craftctl default
 

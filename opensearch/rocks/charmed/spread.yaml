@@ -11,7 +11,7 @@ suites:
     summary: General integration tests
     prepare-each: |
       apt update
-      apt install -y curl jq
+      apt install -y curl yq
       # Docker may already be present on CI runners as docker-ce +
       # containerd.io. Installing docker.io there fails (containerd.io
       # Conflicts: containerd), so only install the packaged Docker when no
@@ -19,7 +19,6 @@ suites:
       if ! command -v docker >/dev/null 2>&1; then
         apt install -y docker.io
       fi
-      snap install yq
       snap install rockcraft --classic --edge
 
       # Required kernel parameters for OpenSearch
