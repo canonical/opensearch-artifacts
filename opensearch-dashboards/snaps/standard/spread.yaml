@@ -10,10 +10,36 @@ suites:
   spread/tests/:
     summary: General integration tests
     prepare-each: |
+      apt update
       apt install -y curl yq
+
+      # Required kernel parameters for the OpenSearch backend.
+      sysctl -w vm.swappiness=0
+      sysctl -w vm.max_map_count=262144
+      sysctl -w net.ipv4.tcp_retries2=5
+
+      # Install the Dashboards snap under test.
       snap install "$CRAFT_ARTIFACT" --dangerous
+
+      # Install the published opensearch snap (3/edge) to act as the backend
+      # for the integration test. The revision is pinned per architecture.
+      case "$(dpkg --print-architecture)" in
+        amd64) os_revision=181 ;;
+        arm64) os_revision=180 ;;
+        *) echo "Unsupported architecture" >&2; exit 1 ;;
+      esac
+      snap install opensearch --channel=3/edge --revision="${os_revision}"
+
+      # Connect the interfaces the opensearch snap needs.
+      snap connect opensearch:log-observe
+      snap connect opensearch:mount-observe
+      snap connect opensearch:process-control
+      snap connect opensearch:system-observe
+      snap connect opensearch:sys-fs-cgroup-service
+      snap connect opensearch:shmem-perf-analyzer || true
     restore-each: |
       snap remove opensearch-dashboards --purge
+      snap remove opensearch --purge
 
 exclude:
   - .git

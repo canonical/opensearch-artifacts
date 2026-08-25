@@ -11,22 +11,40 @@ suites:
     summary: General integration tests
     prepare-each: |
       apt update
-      apt install -y curl jq yq
+      apt install -y curl yq
 
       if ! command -v docker >/dev/null 2>&1; then
         apt install -y docker.io
       fi
+
+      snap install lxd
+      lxd waitready --timeout=120
       snap install rockcraft --classic --edge
+
+      sysctl -w vm.swappiness=0
+      sysctl -w vm.max_map_count=262144
+      sysctl -w net.ipv4.tcp_retries2=5
 
       # Import the rock into docker
       version="$(yq -r .version "${PROJECT_PATH}/rockcraft.yaml")"
+      base="$(yq -r .base "${PROJECT_PATH}/rockcraft.yaml")"
+
       rockcraft.skopeo --insecure-policy copy \
         oci-archive:"${CRAFT_ARTIFACT}" \
         docker-daemon:opensearch-dashboards-charmed:"${version}"
+
+      os_img="ghcr.io/canonical/opensearch:${version}-${base#*@}_edge"
+      docker pull "${os_img}"
+      docker tag "${os_img}" opensearch:"${version}"
     restore-each: |
-      docker rm -f osd 2>/dev/null || true
+      docker rm -f osd cm0 2>/dev/null || true
+      docker network rm osd-net 2>/dev/null || true
       version="$(yq -r .version "${PROJECT_PATH}/rockcraft.yaml")"
+      base="$(yq -r .base "${PROJECT_PATH}/rockcraft.yaml")"
       docker rmi opensearch-dashboards-charmed:"${version}" 2>/dev/null || true
+      docker rmi opensearch:"${version}" 2>/dev/null || true
+      docker rmi "ghcr.io/canonical/opensearch:${version}-${base#*@}_edge" \
+        2>/dev/null || true
 
 exclude:
   - .git

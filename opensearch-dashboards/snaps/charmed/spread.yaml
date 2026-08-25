@@ -10,10 +10,39 @@ suites:
   spread/tests/:
     summary: General integration tests
     prepare-each: |
+      apt update
       apt install -y curl yq
+
+      # Required kernel parameters for the OpenSearch backend.
+      sysctl -w vm.swappiness=0
+      sysctl -w vm.max_map_count=262144
+      sysctl -w net.ipv4.tcp_retries2=5
+
+      # Install the Dashboards snap under test.
       snap install "$CRAFT_ARTIFACT" --dangerous
+
+      # Install the published opensearch-charmed snap (3/edge)
+      # The revision is pinned per architecture.
+      # Revision is 3.7.0
+      # TODO: Update the revision when needed
+      case "$(dpkg --print-architecture)" in
+        amd64) os_revision=49 ;;
+        arm64) os_revision=50 ;;
+        *) echo "Unsupported architecture" >&2; exit 1 ;;
+      esac
+      snap install opensearch-charmed --channel=3/edge \
+        --revision="${os_revision}"
+
+      # Connect the interfaces the opensearch-charmed snap needs.
+      snap connect opensearch-charmed:log-observe
+      snap connect opensearch-charmed:mount-observe
+      snap connect opensearch-charmed:process-control
+      snap connect opensearch-charmed:system-observe
+      snap connect opensearch-charmed:sys-fs-cgroup-service
+      snap connect opensearch-charmed:shmem-perf-analyzer || true
     restore-each: |
       snap remove opensearch-dashboards-charmed --purge
+      snap remove opensearch-charmed --purge
 
 exclude:
   - .git
