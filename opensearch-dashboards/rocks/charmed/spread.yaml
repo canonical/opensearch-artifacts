@@ -11,25 +11,24 @@ suites:
     summary: General integration tests
     prepare-each: |
       apt update
-      apt install -y curl jq yq
-      # Docker may already be present on CI runners as docker-ce +
-      # containerd.io. Installing docker.io there fails (containerd.io
-      # Conflicts: containerd), so only install the packaged Docker when no
-      # docker binary is present (e.g. a fresh LXD VM from the craft backend).
+      apt install -y curl yq
       if ! command -v docker >/dev/null 2>&1; then
         apt install -y docker.io
       fi
       snap install rockcraft --classic --edge
 
-      # Importing the rock inflates it in the Docker storage driver. Reclaim
-      # whatever the runner image left behind first, otherwise the daemon runs
-      # out of space mid-import and skopeo reports the resulting broken pipe as
-      # `writing blob: io: read/write on closed pipe`.
+      # Required kernel parameters for the OpenSearch container.
+      sysctl -w vm.swappiness=0
+      sysctl -w vm.max_map_count=262144
+      sysctl -w net.ipv4.tcp_retries2=5
+
       docker system prune --all --force || true
       df -h /
 
-      # Import the rock into docker
       version="$(yq -r .version "${PROJECT_PATH}/rockcraft.yaml")"
+      base="$(yq -r .base "${PROJECT_PATH}/rockcraft.yaml")"
+
+      # Import the rock into docker
       if ! rockcraft.skopeo --insecure-policy copy \
         oci-archive:"${CRAFT_ARTIFACT}" \
         docker-daemon:opensearch-dashboards-charmed:"${version}"; then
@@ -42,11 +41,20 @@ suites:
 
       # The packed project still holds a copy of the rock we no longer need.
       rm -f "${CRAFT_ARTIFACT}"
+      # TODO: Use opensearch-charmed when published
+      os_img="ghcr.io/canonical/opensearch:${version}-${base#*@}_edge"
+      docker pull "${os_img}"
+      docker tag "${os_img}" opensearch:"${version}"
       df -h /
     restore-each: |
-      docker rm -f dashboards 2>/dev/null || true
+      docker rm -f dashboards cm0 2>/dev/null || true
+      docker network rm osd-net 2>/dev/null || true
       version="$(yq -r .version "${PROJECT_PATH}/rockcraft.yaml")"
+      base="$(yq -r .base "${PROJECT_PATH}/rockcraft.yaml")"
       docker rmi opensearch-dashboards-charmed:"${version}" 2>/dev/null || true
+      docker rmi opensearch:"${version}" 2>/dev/null || true
+      docker rmi "ghcr.io/canonical/opensearch:${version}-${base#*@}_edge" \
+        2>/dev/null || true
 
 exclude:
   - .git
