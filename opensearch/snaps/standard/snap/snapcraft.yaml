@@ -63,7 +63,8 @@ environment:
   SNAP_CURRENT: /snap/opensearch/current
   SNAP_DATA_CURRENT: /var/snap/opensearch/current
   JAVA_HOME: ${SNAP}/usr/lib/jvm/java-21-openjdk-${SNAP_ARCH}
-  PATH: ${JAVA_HOME}/jre/bin:$PATH
+  PATH: ${JAVA_HOME}/jre/bin:${SNAP}/usr/bin:$PATH
+  PYTHONPATH: ${SNAP}/usr/lib/python3/dist-packages
   HOME: ${SNAP_COMMON}/home/snap_daemon
 
   SNAP_LOG_DIR: ${SNAP_COMMON}/ops/snap/logs
