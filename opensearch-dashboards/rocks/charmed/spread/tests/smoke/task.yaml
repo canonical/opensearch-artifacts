@@ -1,4 +1,4 @@
-summary: OpenSearch Dashboards Rock Smoke Test
+summary: Charmed OpenSearch Dashboards Rock Smoke Test
 
 execute: |
   version="$(yq -r .version "${PROJECT_PATH}/rockcraft.yaml")"
@@ -69,6 +69,24 @@ execute: |
       return 1
   }
 
+  exporter_metrics=""
+  wait_for_exporter() {
+      for _ in $(seq 20); do
+          exporter_metrics="$(curl -s --max-time 5 \
+              http://127.0.0.1:9684/metrics || true)"
+          if echo "${exporter_metrics}" \
+              | grep -q '^opensearch_dashboards_up '; then
+              echo "Exporter answered on port 9684"
+              return 0
+          fi
+          sleep 3
+      done
+      echo "Error: exporter did not serve metrics on port 9684 within 60s."
+      echo "Last response: ${exporter_metrics}"
+      dump_diagnostics
+      return 1
+  }
+
   check_pebble_service() {
       local name="${1}" services
       services="$(docker exec dashboards /usr/bin/pebble services)"
@@ -98,14 +116,17 @@ execute: |
       --network osd-net \
       -e OPENSEARCH_HOSTS="[http://${os_ip}:9200]" \
       -p 5601:5601 \
+      -p 9684:9684 \
       --name dashboards \
-      opensearch-dashboards:"${version}"
+      opensearch-dashboards-charmed:"${version}"
 
   wait_for_dashboards
 
-  # The service is 'startup: enabled', so Pebble must report it active.
+  # Both services are 'startup: enabled', so Pebble must report both active.
   check_pebble_service opensearch-dashboards
+  check_pebble_service prometheus-exporter
 
+  # --- Dashboards reports itself healthy and on the expected version -------
   echo -e "Status Response: \n ${status_resp}"
 
   reported="$(echo "${status_resp}" | jq -r '.version.number // empty')"
@@ -139,14 +160,19 @@ execute: |
   fi
   echo "OpenSearch is up: ${os_version}"
 
-  # --- Guard against a container that comes up and then crash-loops --------
-  sleep 10
-  state="$(docker inspect -f '{{.State.Status}}' dashboards)"
-  if [ "${state}" != "running" ]; then
-      echo "Error: container did not stay running (now '${state}')."
+  # --- Prometheus exporter -------------------------------------------------
+  wait_for_exporter
+
+  # Dashboards is up and connected, so the exporter must report it as up.
+  dashboards_up="$(echo "${exporter_metrics}" \
+      | awk '$1 == "opensearch_dashboards_up" {print $2}')"
+  if [ "${dashboards_up}" != "1.0" ]; then
+      echo "Error: opensearch_dashboards_up is '${dashboards_up}'" \
+        "but Dashboards is up and connected to OpenSearch."
+      echo "${exporter_metrics}" | grep opensearch_dashboards | tail -20
       dump_diagnostics
       exit 1
   fi
-  check_pebble_service opensearch-dashboards
+  echo "Exporter reports opensearch_dashboards_up=${dashboards_up}"
 
   echo "All smoke tests passed."

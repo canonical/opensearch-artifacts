@@ -1,4 +1,4 @@
-project: opensearch-dashboards-rock
+project: opensearch-dashboards-charmed-rock
 
 backends:
   craft:
@@ -31,7 +31,7 @@ suites:
       # Import the rock into docker
       if ! rockcraft.skopeo --insecure-policy copy \
         oci-archive:"${CRAFT_ARTIFACT}" \
-        docker-daemon:opensearch-dashboards:"${version}"; then
+        docker-daemon:opensearch-dashboards-charmed:"${version}"; then
         echo "Failed to import the rock into Docker."
         df -h /
         docker system df || true
@@ -41,7 +41,7 @@ suites:
 
       # The packed project still holds a copy of the rock we no longer need.
       rm -f "${CRAFT_ARTIFACT}"
-
+      # TODO: Use opensearch-charmed when published
       os_img="ghcr.io/canonical/opensearch:${version}-${base#*@}_edge"
       docker pull "${os_img}"
       docker tag "${os_img}" opensearch:"${version}"
@@ -51,7 +51,7 @@ suites:
       docker network rm osd-net 2>/dev/null || true
       version="$(yq -r .version "${PROJECT_PATH}/rockcraft.yaml")"
       base="$(yq -r .base "${PROJECT_PATH}/rockcraft.yaml")"
-      docker rmi opensearch-dashboards:"${version}" 2>/dev/null || true
+      docker rmi opensearch-dashboards-charmed:"${version}" 2>/dev/null || true
       docker rmi opensearch:"${version}" 2>/dev/null || true
       docker rmi "ghcr.io/canonical/opensearch:${version}-${base#*@}_edge" \
         2>/dev/null || true

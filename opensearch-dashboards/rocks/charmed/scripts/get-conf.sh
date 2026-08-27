@@ -6,5 +6,5 @@ function get_yaml_prop() {
     local full_key_path="${2}"
     local default="${3}"
 
-   /usr/bin/yq ".\"${full_key_path}\" // \"${default}\"" "${target_file}"
+    /usr/bin/yq -r ".\"${full_key_path}\" // \"${default}\"" "${target_file}"
 }
