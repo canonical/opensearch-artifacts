@@ -118,10 +118,6 @@ parts:
           "${CRAFT_PRIME}/var/log/opensearch" \
           "${CRAFT_PRIME}/etc/opensearch/certificates"
 
-      # No k-NN handling here, unlike the standard and charmed rocks: the
-      # chiseled snap removes opensearch-knn, so there are no native
-      # libraries to relocate.
-
       # --- CA truststore ---
       CONTAINER_CONF_DIR="/etc/opensearch"
       PRIME_CONF_DIR="${CRAFT_PRIME}${CONTAINER_CONF_DIR}"

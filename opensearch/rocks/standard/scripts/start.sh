@@ -85,9 +85,6 @@ set_yaml_prop "${conf}" "path.data" "${OPENSEARCH_VARLIB}/data"
 set_yaml_prop "${conf}" "path.logs" "${OPENSEARCH_VARLOG}/logs"
 set_yaml_prop "${conf}" "plugins.security.disabled" "true"
 sed -i "s@=logs/@=${OPENSEARCH_VARLOG}/@" "${OPENSEARCH_PATH_CONF}/jvm.options"
-# Rewrite the relative Performance Analyzer javaagent path to an absolute one.
-# Anchored on "agent/" so it is idempotent across pebble restarts (once the
-# path is absolute it no longer matches).
 sed -i "s@-javaagent:agent/@-javaagent:${OPENSEARCH_HOME}/agent/@" "${OPENSEARCH_PATH_CONF}/jvm.options"
 
 cat "${conf}"
