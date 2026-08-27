@@ -1,4 +1,4 @@
-project: opensearch-rock
+project: opensearch-charmed-rock
 
 backends:
   craft:
@@ -31,7 +31,7 @@ suites:
         | yq .version | tr -d '"')"
       if ! rockcraft.skopeo --insecure-policy copy \
         oci-archive:"${CRAFT_ARTIFACT}" \
-        docker-daemon:opensearch:"${version}"; then
+        docker-daemon:opensearch-charmed:"${version}"; then
         echo "Failed to import the rock into Docker."
         df -h /
         docker system df || true
@@ -46,7 +46,7 @@ suites:
       docker rm -f cm0 data1 cm1 2>/dev/null || true
       version="$(cat "${PROJECT_PATH}/rockcraft.yaml" \
         | yq .version | tr -d '"')"
-      docker rmi opensearch:"${version}" 2>/dev/null || true
+      docker rmi opensearch-charmed:"${version}" 2>/dev/null || true
 
 exclude:
   - .git

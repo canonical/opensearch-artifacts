@@ -72,7 +72,7 @@ endpoint="https://localhost:9200"
 cluster_resp=$(${SNAP_CURRENT}/usr/bin/curl -sk -XGET "${endpoint}" -u "admin:${admin_auth_password}")
 echo -e "Cluster Response: \n ${cluster_resp}"
 
-node_name_resp=$(echo "${cluster_resp}" | ${SNAP_CURRENT}/bin/yq -r .name)
+node_name_resp=$(echo "${cluster_resp}" | ${SNAP_CURRENT}/usr/bin/yq  -r .name)
 if [ "${node_name_resp}" != "${node_name}" ]; then
     exit 1
 fi

@@ -20,6 +20,7 @@ confinement: strict # use 'strict' once you have the right plugs and slots
 
 platforms:
   amd64:
+  arm64:
 
 
 system-usernames:
@@ -61,8 +62,9 @@ hooks:
 environment:
   SNAP_CURRENT: /snap/opensearch/current
   SNAP_DATA_CURRENT: /var/snap/opensearch/current
-  JAVA_HOME: ${SNAP}/usr/lib/jvm/java-21-openjdk-amd64
-  PATH: ${JAVA_HOME}/jre/bin:$PATH
+  JAVA_HOME: ${SNAP}/usr/lib/jvm/java-21-openjdk-${SNAP_ARCH}
+  PATH: ${JAVA_HOME}/jre/bin:${SNAP}/usr/bin:$PATH
+  PYTHONPATH: ${SNAP}/usr/lib/python3/dist-packages
   HOME: ${SNAP_COMMON}/home/snap_daemon
 
   SNAP_LOG_DIR: ${SNAP_COMMON}/ops/snap/logs
@@ -231,15 +233,13 @@ apps:
       bin_script: opensearch-performance-analyzer/performance-analyzer-agent-cli
 
   keytool:
-    command: usr/lib/jvm/java-21-openjdk-amd64/bin/keytool
+    command: opt/opensearch/keytool-wrapper.sh
     plugs:
       - mount-observe
 
 parts:
   dependencies:
     plugin: nil
-    stage-snaps:
-      - yq
     stage-packages:
       - util-linux
       - curl
@@ -251,16 +251,18 @@ parts:
       - libxext6
       - libxi6
       - libxtst6
-      - libpsm-infinipath1
       - libboost-all-dev
       - libasound2
-      - libpsm2-2-compat
+      - on amd64:
+          - libpsm2-2-compat
+          - libpsm-infinipath1
+          - libqatzip3
       - libcrypt1
       - libexpat1
       - zlib1g
-      - libqatzip3
       - acl
       - rsync
+      - yq
 
 
   wrapper-scripts:
@@ -285,10 +287,8 @@ parts:
       - jq
     stage-packages:
       - openjdk-21-jdk-headless
+    # yamllint disable rule:line-length
     override-build: |
-      # update deps
-      apt-get update; apt-get upgrade -y; apt-get autoremove --purge -y
-      apt-get clean -y
       update-ca-certificates -f
 
       # setup trust store
@@ -300,11 +300,15 @@ parts:
       version="$(craftctl get version)"
       series="${version%%.*}.x"
       patch="ubuntu0"
-      release_date="20260810164749"
-      arch="amd64"
-
-      archive="opensearch-${version}-${patch}-${release_date}-linux-x64.tar.gz"
-      url="https://api.launchpad.net/devel/opensearch-releases/${series}/${version}-${arch}-${patch}/files"
+      # If architecture is arm64
+      if [[ "$CRAFT_ARCH_BUILD_FOR" == "arm64" ]]; then
+        release_date="20260810164516"
+        archive="opensearch-${version}-${patch}-${release_date}-linux-arm64.tar.gz"
+      else
+        release_date="20260810164749"
+        archive="opensearch-${version}-${patch}-${release_date}-linux-x64.tar.gz"
+      fi
+      url="https://api.launchpad.net/devel/opensearch-releases/${series}/${version}-${CRAFT_ARCH_BUILD_FOR}-${patch}/files"
       curl -sk "${url}" \
         | jq -r '.entries[].file_link' \
         | sort \
@@ -350,3 +354,4 @@ parts:
        "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-plugin"
       cp "${CRAFT_STAGE}/opt/opensearch/keystore-wrapper.sh" \
        "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-keystore"
+    # yamllint enable rule:line-length

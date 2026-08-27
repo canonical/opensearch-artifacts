@@ -1,12 +1,12 @@
 # Copyright 2023 Canonical Ltd.
 # See LICENSE file for licensing details.
-name: opensearch # the name of your ROCK
+name: opensearch-charmed # the name of your ROCK
 base: ubuntu@24.04 # the base environment for this ROCK
 license: Apache-2.0
 
 version: "2.19.6" # just for humans. Semantic versioning is recommended
 
-summary: "OpenSearch ROCK OCI."
+summary: "OpenSearch Charmed ROCK OCI."
 description: |
   OpenSearch is a community-driven, Apache 2.0-licensed open source search and
    analytics suite that makes it easy to ingest, search, visualize,
@@ -90,25 +90,6 @@ parts:
       # amd64 and arm64 builds (the snap ships java-21-openjdk-${arch}).
       ln -sf "java-21-openjdk-${CRAFT_ARCH_BUILD_FOR}" \
           "${CRAFT_PRIME}/usr/lib/jvm/java-21-openjdk"
-
-      # Remove plugins not shipped in the standard rock using the
-      # official opensearch-plugin utility.
-      export JAVA_HOME="${CRAFT_PRIME}/usr/lib/jvm/java-21-openjdk"
-      export OPENSEARCH_PATH_CONF="${CRAFT_PRIME}/etc/opensearch"
-
-      declare -a plugins_to_remove=(
-          "repository-s3"
-          "repository-gcs"
-          "repository-azure"
-          "prometheus-exporter"
-      )
-
-      for plugin in "${plugins_to_remove[@]}"; do
-          echo "Removing plugin: ${plugin}"
-          "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-plugin" \
-              remove "${plugin}"
-      done
-      ls "${CRAFT_PRIME}/usr/share/opensearch/plugins"
 
   non-root-user:
     plugin: nil

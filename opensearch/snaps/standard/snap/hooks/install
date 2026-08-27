@@ -15,6 +15,10 @@ function create_file_structure () {
     mkdir -p "${OPENSEARCH_PATH_CONF}/"
     copy_files_between_folder "${SNAP}/etc/opensearch/" "${OPENSEARCH_PATH_CONF}/"
 
+    if ! grep -q "^---$" "${OPENSEARCH_PATH_CONF}/opensearch.yml"; then
+        sed -i "1i ---" "${OPENSEARCH_PATH_CONF}/opensearch.yml"
+    fi
+
     declare -a folders=("${OPENSEARCH_HOME}" "${OPENSEARCH_VARLIB}" "${OPENSEARCH_VARLOG}" "${OPENSEARCH_TMPDIR}" "${OPENSEARCH_PATH_CERTS}" "${HOME}")
     for f in "${folders[@]}"; do
         if [ ! -d "${f}" ]; then
@@ -54,7 +58,7 @@ function set_prometheus_exporter_config_props() {
 
 function create_editable_cacerts_trust_store() {
     # Copy the read only JDK provided cacerts into a writeable one
-    "${SNAP}"/usr/lib/jvm/java-21-openjdk-amd64/bin/keytool \
+    "${JAVA_HOME}"/bin/keytool \
         -importkeystore                                     \
         -srckeystore  "${SNAP}/etc/ssl/certs/java/cacerts"  \
         -destkeystore "${SNAP_DATA}"/etc/opensearch/certificates/cacerts.p12 \

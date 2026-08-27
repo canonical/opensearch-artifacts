@@ -10,7 +10,7 @@ if [ -z "${init_security}" ] || [ "${init_security}" != "no" ]; then
 fi
 snapctl set init-security="${init_security}"
 
-admin_password="$(snapctl get admin-pasword)"
+admin_password="$(snapctl get admin-password)"
 if [ -n "${admin_password}" ]; then
     snapctl set admin-password="${admin_password}"
 fi

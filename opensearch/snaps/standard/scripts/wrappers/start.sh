@@ -47,6 +47,7 @@ function set_defaults () {
 # All VFIO devices owned by the group qat will be configured
 # to allow RW access for snap_daemon group.
 function configure_qat() {
+    [ "${SNAP_ARCH}" = "amd64" ] || return 0
     qat_group="qat"
     if $(getent group "${qat_group}" >/dev/null); then
       find /dev/vfio/ -maxdepth 1 -group "${qat_group}" \
