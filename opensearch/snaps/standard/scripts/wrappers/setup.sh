@@ -19,11 +19,11 @@ To be ran / setup once per cluster.
 --security-disabled       (Optional)  Enum of either yes, no (default). Enables or disables the security plugin.
 --tls-self-managed        (Optional)  Enum of either yes (default), no. Generates and self-signs the certificates.
 --tls-init-setup          (Optional)  Enum of either yes, no (default). Creates a root and admin certs if set to yes.
---tls-priv-key-root-pass  (Optional)  Password for encrypting the root key
+--tls-priv-key-root-pass  (Optional)  Password for encrypting the root key. If unset, the keys are generated unencrypted.
 --tls-root-subject        (Optional)  Subject for the root
---tls-priv-key-admin-pass (Optional)  Password for encrypting the admin key
+--tls-priv-key-admin-pass (Optional)  Password for encrypting the admin key. If unset, the key is generated unencrypted.
 --tls-admin-subject       (Optional)  Subject for the admin certificate
---tls-priv-key-node-pass  (Optional)  Password for encrypting the node key
+--tls-priv-key-node-pass  (Optional)  Password for encrypting the node key. If unset, the key is generated unencrypted.
 --tls-node-subject        (Optional)  Subject for the node certificate
 --tls-for-rest            (Optional)  Enum of either: yes (default), no. Enables the certificate for both the transport and rest layers or just the former
 --help                                Shows help menu
@@ -141,6 +141,16 @@ function set_defaults () {
         cluster_name="opensearch-cluster"
     fi
 
+    if [ -z "${node_name}" ]; then
+        node_name="opensearch-node-1"
+    fi
+
+    if [ -z "${node_roles}" ]; then
+        # Default to a single-node-capable set of roles: a node without
+        # the data role cannot hold the security index shards.
+        node_roles="cluster_manager,data"
+    fi
+
     if [ -z "${node_host}" ]; then
         node_host="[_local_, _site_]"
     fi
@@ -175,31 +185,11 @@ function set_defaults () {
     if [ -z "${tls_for_rest}" ] || [ "${tls_for_rest}" != "no" ]; then
         tls_for_rest="yes"
     fi
+
 }
-
-
-function validate_args () {
-    err_message=""
-    if [ -z "${node_name}" ]; then
-        err_message="- '--node-name' is required \n"
-    fi
-
-    if [ "${tls_self_managed}" == "yes" ]; then
-        if [ -z "${tls_priv_key_root_pass}" ]; then
-            err_message="${err_message}- '--tls-priv-key-root-pass' is required \n"
-        fi
-    fi
-
-    if [ -n "${err_message}" ]; then
-        echo -e "The following errors occurred: \n${err_message}Refer to the help menu."
-        exit 1
-    fi
-}
-
 
 parse_args "$@"
 set_defaults
-validate_args
 
 
 opensearch_yaml="${OPENSEARCH_PATH_CONF}/opensearch.yml"
@@ -219,7 +209,7 @@ else
     set_yaml_prop "${opensearch_yaml}" "plugins.security.disabled" "false"
 fi
 
-if [ "${tls_self_managed}" ]; then
+if [ "${tls_self_managed}" == "yes" ]; then
     TLS_DIR="${OPS_ROOT}/security/tls"
 
     if [ "${tls_init_setup}" == "yes" ]; then

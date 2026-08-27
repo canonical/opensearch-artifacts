@@ -70,6 +70,34 @@ function create_editable_cacerts_trust_store() {
 }
 
 
+function set_kernel_prerequisites () {
+    # OpenSearch refuses to bootstrap when vm.max_map_count is too low.
+    # Best effort: these writes may be denied by the snap confinement, in
+    # which case we rely on the host already providing sane values.
+    "${SNAP}"/usr/sbin/sysctl -w vm.swappiness=0 || true
+    "${SNAP}"/usr/sbin/sysctl -w vm.max_map_count=262144 || true
+    "${SNAP}"/usr/sbin/sysctl -w net.ipv4.tcp_retries2=5 || true
+}
+
+
+function bootstrap_cluster () {
+    # Configure the cluster with sensible defaults (single-node ready) and
+    # generate the TLS material required by the security plugin: root, admin
+    # and node certificates with unencrypted keys.
+    # Users can re-run 'opensearch.setup' afterwards to configure the
+    # cluster the way they want.
+    bash "${OPS_ROOT}"/setup.sh \
+        --node-roles cluster_manager,data \
+        --tls-init-setup yes
+
+    # Let the security plugin create the .opendistro_security index from
+    # the shipped configuration files on first boot.
+    set_yaml_prop \
+        "${OPENSEARCH_PATH_CONF}/opensearch.yml" \
+        "plugins.security.allow_default_init_securityindex" "true"
+}
+
+
 create_file_structure
 set_base_config_props
 create_editable_cacerts_trust_store
@@ -80,3 +108,6 @@ for f in "${folders[@]}"; do
     chown -R snap_daemon "${f}/"*
     chgrp -R root "${f}/"*
 done
+
+set_kernel_prerequisites
+bootstrap_cluster

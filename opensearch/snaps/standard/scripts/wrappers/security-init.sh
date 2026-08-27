@@ -7,13 +7,16 @@ usage() {
 cat << EOF
 usage: start.sh --init-security yes --tls-priv-key-admin-pass ...
 To be ran / setup once per cluster - or when wanting to rebuild the security index.
---tls-priv-key-admin-pass  (Optional) Passphrase of the admin key
+--tls-priv-key-admin-pass  (Optional) Passphrase of the admin key, only needed if
+                           you replaced the generated certificates with your own
+                           encrypted ones. The generated keys are unencrypted.
 --help                                Shows help menu
 EOF
 }
 
 
 # Args
+# Set default value for this variable
 tls_priv_key_admin_pass=""
 
 
@@ -58,6 +61,8 @@ function init_security_plugin () {
         "-key" "${OPENSEARCH_PATH_CERTS}/admin-key.pem"
     )
 
+    # Only needed for user-provided encrypted admin keys: the generated
+    # ones are unencrypted.
     if [ -n "${tls_priv_key_admin_pass}" ]; then
         sec_args+=("-keypass" "${tls_priv_key_admin_pass}")
     fi
@@ -70,6 +75,7 @@ function init_security_plugin () {
 
 parse_args "$@"
 
+# TODO: 
 # give it some time to bootstrap in case the commands were chained
 # replace later with a request to the opensearch rest api
 # and test on "OpenSearch Security not initialized." output

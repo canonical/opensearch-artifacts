@@ -93,7 +93,7 @@ environment:
 apps:
   daemon:
     daemon: simple
-    install-mode: disable
+    install-mode: enable
     command: opt/opensearch/start.sh
     restart-condition: always
     restart-delay: 20s
@@ -279,6 +279,9 @@ parts:
   opensearch:
     plugin: nil
     after: [wrapper-scripts]
+    build-environment:
+      # LXD bridge host IP, reachable from build containers
+      - OPS_TARBALL_CACHE_URL: http://10.35.197.1:8000
     build-packages:
       - ca-certificates
       - ca-certificates-java
