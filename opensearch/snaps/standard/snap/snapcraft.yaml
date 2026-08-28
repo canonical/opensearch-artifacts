@@ -317,9 +317,10 @@ parts:
 
       # Use local HTTP cache if available to avoid re-downloading the large tarball
       cache_url="${OPS_TARBALL_CACHE_URL:-}"
-      if [ -n "${cache_url}" ]; then
-        curl -skL "${cache_url}/${archive}" -o "${archive}"
+      if [ -n "${cache_url}" ] && curl -sf --max-time 5 -o "${archive}" "${cache_url}/${archive}"; then
+        echo "Using cached tarball from ${cache_url}/${archive}"
       else
+        echo "Downloading tarball from Launchpad..."
         curl -sk "${url}" \
           | jq -r '.entries[].file_link' \
           | sort \
