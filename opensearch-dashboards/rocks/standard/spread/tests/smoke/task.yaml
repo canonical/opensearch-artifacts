@@ -1,0 +1,75 @@
+summary: OpenSearch Dashboards Rock Smoke Test
+
+execute: |
+  version="$(yq -r .version "${PROJECT_PATH}/rockcraft.yaml")"
+
+  wait_for_dashboards() {
+      for _ in $(seq 1 60); do
+          if curl -s -o /dev/null --max-time 3 \
+              http://127.0.0.1:5601/api/status; then
+              echo "Dashboards answered on port 5601"
+              return 0
+          fi
+          sleep 3
+      done
+      echo "Error: Dashboards did not answer on port 5601 within 180s."
+      docker logs osd 2>&1 | tail -50 || true
+      # Dashboards logs to a file, not stdout, so check that too.
+      docker exec osd \
+          sh -c 'tail -50 /var/log/opensearch-dashboards/*.log' || true
+      return 1
+  }
+
+  docker run \
+      -d --rm -it \
+      -p 5601:5601 \
+      --name osd \
+      opensearch-dashboards:"${version}"
+
+  wait_for_dashboards
+
+  running="$(docker inspect -f '{{.State.Running}}' osd)"
+  if [ "${running}" != "true" ]; then
+      echo "Error: container is not running (State.Running=${running})."
+      docker logs osd 2>&1 | tail -50 || true
+      exit 1
+  fi
+
+  echo "=== pebble services ==="
+  docker exec osd /usr/bin/pebble services
+
+  osd_status="$(docker exec osd /usr/bin/pebble services \
+      | awk '$1 == "opensearch-dashboards" {print $3}')"
+  if [ "${osd_status}" != "active" ]; then
+      echo "Error: opensearch-dashboards service is '${osd_status}'."
+      docker exec osd /usr/bin/pebble services || true
+      docker logs osd 2>&1 | tail -50 || true
+      exit 1
+  fi
+  echo "opensearch-dashboards service is active"
+
+  logfile="/var/log/opensearch-dashboards/opensearch_dashboards.log"
+  if ! docker exec osd test -s "${logfile}"; then
+      echo "Error: ${logfile} is missing or empty."
+      docker exec osd ls -l /var/log/opensearch-dashboards/ || true
+      exit 1
+  fi
+  echo "Dashboards is writing to ${logfile}"
+
+  status_resp="$(curl -s --max-time 10 http://127.0.0.1:5601/api/status)"
+  echo -e "Status Response: \n ${status_resp}"
+
+  reported="$(docker exec osd \
+      cat /usr/share/opensearch-dashboards/package.json | jq -r '.version')"
+  if [ -z "${reported}" ]; then
+      echo "Error: could not read the version from package.json."
+      exit 1
+  fi
+
+  echo "Reported version: ${reported} (rock: ${version})"
+  if [ "${reported}" != "${version}" ]; then
+      echo "Error: version mismatch: OSD ${reported} != rock ${version}."
+      exit 1
+  fi
+
+  echo "All smoke tests passed."
