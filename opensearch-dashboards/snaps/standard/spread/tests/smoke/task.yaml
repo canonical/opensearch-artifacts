@@ -1,0 +1,65 @@
+summary: OpenSearch Dashboards Snap Smoke Test
+
+execute: |
+  snap_name="opensearch-dashboards"
+  status_url="http://localhost:5601/api/status"
+  expected_version="$(yq -r '.version' "${PROJECT_PATH}/snap/snapcraft.yaml")"
+
+  if [ -z "${expected_version}" ] || [ "${expected_version}" = "null" ]; then
+    echo "FAIL: could not read 'version' from snapcraft.yaml"
+    exit 1
+  fi
+
+  dump_diagnostics() {
+    snap services "${snap_name}" || true
+    snap logs "${snap_name}" -n=50 || true
+  }
+
+  snap start "${snap_name}"
+
+  retry=0
+  until curl -s "${status_url}" >/dev/null 2>&1; do
+    retry=$((retry + 1))
+    if [ "${retry}" -ge 60 ]; then
+      echo "FAIL: OpenSearch Dashboards did not start listening in time"
+      dump_diagnostics
+      exit 1
+    fi
+    sleep 2
+  done
+  echo "Server responded: $(curl -s "${status_url}")"
+
+  services="$(snap services "${snap_name}")"
+  echo "${services}"
+  for service in opensearch-dashboards-daemon; do
+    pattern="^${snap_name}\.${service} +[a-z]+ +active"
+    if ! echo "${services}" | grep -qE "${pattern}"; then
+      echo "FAIL: snap service '${service}' is not active"
+      dump_diagnostics
+      exit 1
+    fi
+  done
+
+  manifest="/snap/${snap_name}/current/usr/share/opensearch-dashboards"
+  manifest="${manifest}/manifest.yml"
+  snap_version="$(snap list "${snap_name}" | awk 'NR == 2 {print $2}')"
+  workload_version="$(yq -r '.build.version' "${manifest}")"
+
+  echo "snapcraft.yaml version: ${expected_version}"
+  echo "installed snap version: ${snap_version}"
+  echo "workload version:       ${workload_version}"
+
+  if [ "${snap_version}" != "${expected_version}" ]; then
+    echo "FAIL: installed snap is '${snap_version}' but snapcraft.yaml" \
+      "declares '${expected_version}'"
+    exit 1
+  fi
+
+  if [ "${workload_version}" != "${expected_version}" ]; then
+    echo "FAIL: the OpenSearch Dashboards workload is" \
+      "'${workload_version}' but snapcraft.yaml declares" \
+      "'${expected_version}'"
+    exit 1
+  fi
+
+  echo "All smoke tests passed."
