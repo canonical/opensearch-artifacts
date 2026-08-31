@@ -5,7 +5,7 @@ set -eu
 source "/usr/bin/get-conf.sh"
 
 function fetch_exporter_args () {
-    DASHBOARDS_HOST="localhost"
+    DASHBOARDS_HOST=$( get_yaml_prop "${OPENSEARCH_DASHBOARDS_PATH_CONF}/opensearch_dashboards.yml" "server.host" "0.0.0.0" )
     DASHBOARDS_PORT=$( get_yaml_prop "${OPENSEARCH_DASHBOARDS_PATH_CONF}/opensearch_dashboards.yml" "server.port" "5601" )
     DASHBOARDS_USER=$( get_yaml_prop "${OPENSEARCH_DASHBOARDS_PATH_CONF}/opensearch_dashboards.yml" "opensearch.username" "" )
     DASHBOARDS_PASSWORD=$( get_yaml_prop "${OPENSEARCH_DASHBOARDS_PATH_CONF}/opensearch_dashboards.yml" "opensearch.password" "" )
