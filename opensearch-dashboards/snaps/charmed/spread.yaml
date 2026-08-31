@@ -1,0 +1,21 @@
+project: opensearch-dashboards-charmed-snap
+
+backends:
+  craft:
+    type: craft
+    systems:
+      - ubuntu-26.04
+
+suites:
+  spread/tests/:
+    summary: General integration tests
+    prepare-each: |
+      apt install -y curl yq
+      snap install "$CRAFT_ARTIFACT" --dangerous
+    restore-each: |
+      snap remove opensearch-dashboards-charmed --purge
+
+exclude:
+  - .git
+
+kill-timeout: 1h
