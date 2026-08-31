@@ -13,21 +13,90 @@ execute: |
   dump_diagnostics() {
     snap services "${snap_name}" || true
     snap logs "${snap_name}" -n=50 || true
+    snap logs opensearch.daemon -n=50 || true
   }
 
-  snap start "${snap_name}"
+  snap set opensearch set-sysctl-props=yes
+
+  snap run opensearch.setup \
+    --node-name cm0 \
+    --node-roles cluster_manager,data \
+    --tls-init-setup yes \
+    --tls-priv-key-root-pass changeit \
+    --tls-priv-key-admin-pass changeit \
+    --tls-priv-key-node-pass changeit
+
+  snap start opensearch.daemon
 
   retry=0
-  until curl -s "${status_url}" >/dev/null 2>&1; do
+  until curl -sk https://localhost:9200 >/dev/null 2>&1; do
     retry=$((retry + 1))
-    if [ "${retry}" -ge 60 ]; then
-      echo "FAIL: OpenSearch Dashboards did not start listening in time"
+    if [ "${retry}" -ge 90 ]; then
+      echo "FAIL: OpenSearch backend did not become ready in time"
       dump_diagnostics
       exit 1
     fi
     sleep 2
   done
-  echo "Server responded: $(curl -s "${status_url}")"
+
+  snap run opensearch.security-init --tls-priv-key-admin-pass changeit
+
+  retry=0
+  until [ "$(curl -sk -o /dev/null -w '%{http_code}' \
+    https://localhost:9200/.opendistro_security -u admin:admin)" = "200" ]; do
+    retry=$((retry + 1))
+    if [ "${retry}" -ge 30 ]; then
+      echo "FAIL: security index was not created in time"
+      dump_diagnostics
+      exit 1
+    fi
+    sleep 2
+  done
+
+  os_resp="$(curl -sk https://localhost:9200 -u admin:admin)"
+  echo "Backend version: $(echo "${os_resp}" | jq -r '.version.number')"
+
+  # --- Point the snap at the OpenSearch backend ----------------------------
+  # The node certificate is self-signed, so disable peer verification.
+  conf="/var/snap/${snap_name}/current/etc/opensearch-dashboards/opensearch_dashboards.yml"
+  os_yq="/snap/${snap_name}/current/usr/bin/yq"
+
+  "${os_yq}" -y -i '."opensearch.hosts" = ["https://localhost:9200"]' "${conf}"
+  "${os_yq}" -y -i '."opensearch.ssl.verificationMode" = "none"' "${conf}"
+  "${os_yq}" -y -i '."opensearch.username" = "kibanaserver"' "${conf}"
+  "${os_yq}" -y -i '."opensearch.password" = "kibanaserver"' "${conf}"
+  "${os_yq}" -y -i '."server.host" = "0.0.0.0"' "${conf}"
+  chown snap_daemon:root "${conf}"
+
+  echo "=== opensearch_dashboards.yml ==="
+  "${os_yq}" \
+    '."opensearch.hosts", ."opensearch.ssl.verificationMode", ."server.host"' \
+    "${conf}"
+
+  # --- Start Dashboards ----------------------------------------------------
+  snap start "${snap_name}"
+
+  status_resp=""
+  resp=""
+  retry=0
+  while [ "${retry}" -lt 150 ]; do
+    resp="$(curl -s --max-time 5 -u admin:admin "${status_url}" || true)"
+    state="$(echo "${resp}" | jq -r '.status.overall.state // empty' \
+      2>/dev/null || true)"
+    if [ "${state}" = "green" ] || [ "${state}" = "yellow" ]; then
+      status_resp="${resp}"
+      break
+    fi
+    retry=$((retry + 1))
+    sleep 2
+  done
+  if [ -z "${status_resp}" ]; then
+    echo "FAIL: OpenSearch Dashboards did not become ready in time"
+    echo "Last response: ${resp}"
+    dump_diagnostics
+    exit 1
+  fi
+  echo "Server responded: ${status_resp}"
 
   services="$(snap services "${snap_name}")"
   echo "${services}"
@@ -61,5 +130,60 @@ execute: |
       "'${expected_version}'"
     exit 1
   fi
+
+  # --- Integration: Dashboards must be talking to OpenSearch ---------------
+  dashboards_version="$(echo "${status_resp}" \
+    | jq -r '.version.number // empty')"
+  if [ "${dashboards_version}" != "${expected_version}" ]; then
+    echo "FAIL: /api/status reports version '${dashboards_version}'" \
+      "!= ${expected_version}."
+    exit 1
+  fi
+  echo "Dashboards reports version ${dashboards_version} via /api/status"
+
+  # The overall status only reaches an available state once Dashboards has
+  # successfully connected to its OpenSearch backend.
+  overall_state="$(echo "${status_resp}" \
+    | jq -r '.status.overall.state // empty')"
+  if [ "${overall_state}" != "green" ] && \
+     [ "${overall_state}" != "yellow" ]; then
+    echo "FAIL: Dashboards overall state is '${overall_state}'" \
+      "(expected green/yellow), so it is not connected to OpenSearch."
+    dump_diagnostics
+    exit 1
+  fi
+  echo "Dashboards overall state is '${overall_state}' (backend connected)"
+
+  # The security plugin redirects unauthenticated browsers to the login page.
+  root_resp="$(curl -s -i --max-time 10 http://localhost:5601)"
+  if ! echo "${root_resp}" | grep -q "302 Found"; then
+    echo "FAIL: Dashboards did not redirect (302) on /."
+    echo "${root_resp}" | head -5
+    exit 1
+  fi
+  echo "Dashboards redirects unauthenticated requests"
+
+  # Valid credentials must authenticate against the OpenSearch backend.
+  if ! curl -s -i -k -XPOST http://localhost:5601/auth/login \
+      --max-time 10 \
+      -H 'Accept: application/json' \
+      -H 'Content-Type: application/json' \
+      -H 'osd-xsrf:true' \
+      -d '{"username":"kibanaserver","password":"kibanaserver"}' \
+      | grep -q "200 OK"; then
+    echo "FAIL: authentication with valid credentials did not return 200."
+    dump_diagnostics
+    exit 1
+  fi
+  echo "Authentication with valid credentials succeeded"
+
+  logfile="/var/snap/${snap_name}/common/var/log/opensearch-dashboards"
+  logfile="${logfile}/opensearch_dashboards.log"
+  if ! test -s "${logfile}"; then
+    echo "FAIL: ${logfile} is missing or empty."
+    ls -l "$(dirname "${logfile}")" || true
+    exit 1
+  fi
+  echo "Dashboards is writing to ${logfile}"
 
   echo "All smoke tests passed."

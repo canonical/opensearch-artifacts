@@ -3,6 +3,7 @@ summary: Charmed OpenSearch Dashboards Snap Smoke Test
 execute: |
   snap_name="opensearch-dashboards-charmed"
   status_url="http://localhost:5601/api/status"
+  metrics_url="http://localhost:9684/metrics"
   expected_version="$(yq -r '.version' "${PROJECT_PATH}/snap/snapcraft.yaml")"
 
   if [ -z "${expected_version}" ] || [ "${expected_version}" = "null" ]; then
@@ -13,21 +14,80 @@ execute: |
   dump_diagnostics() {
     snap services "${snap_name}" || true
     snap logs "${snap_name}" -n=50 || true
+    snap logs opensearch-charmed.daemon -n=50 || true
   }
 
-  snap start "${snap_name}"
+  dashboards_up() {
+    curl -s --max-time 10 "${metrics_url}" \
+      | awk '$1 == "opensearch_dashboards_up" {print $2}'
+  }
+
+  snap set opensearch-charmed set-sysctl-props=yes
+  snap set opensearch-charmed init-security=no
+
+  # Configure a single-node cluster by editing opensearch.yml directly.
+  os_yaml="/var/snap/opensearch-charmed/current/etc/opensearch/opensearch.yml"
+  yq -y -i '."cluster.name" = "smoke-cluster"' "${os_yaml}"
+  yq -y -i '."node.name" = "cm0"' "${os_yaml}"
+  yq -y -i '."node.roles" = ["cluster_manager", "data"]' "${os_yaml}"
+  yq -y -i '."network.host" = "127.0.0.1"' "${os_yaml}"
+  yq -y -i '."discovery.seed_hosts" = ["127.0.0.1"]' "${os_yaml}"
+  yq -y -i '."cluster.initial_cluster_manager_nodes" = ["cm0"]' "${os_yaml}"
+  yq -y -i '."plugins.security.disabled" = true' "${os_yaml}"
+
+  snap start opensearch-charmed.daemon
 
   retry=0
-  until curl -s "${status_url}" >/dev/null 2>&1; do
+  until curl -s http://localhost:9200 >/dev/null 2>&1; do
     retry=$((retry + 1))
-    if [ "${retry}" -ge 60 ]; then
-      echo "FAIL: OpenSearch Dashboards did not start listening in time"
+    if [ "${retry}" -ge 90 ]; then
+      echo "FAIL: OpenSearch backend did not become ready in time"
       dump_diagnostics
       exit 1
     fi
     sleep 2
   done
-  echo "Server responded: $(curl -s "${status_url}")"
+  os_resp="$(curl -s http://localhost:9200)"
+  echo "Backend version: $(echo "${os_resp}" | jq -r '.version.number')"
+
+  # --- Point the snap at the OpenSearch backend ----------------------------
+  conf="/var/snap/${snap_name}/current/etc/opensearch-dashboards/opensearch_dashboards.yml"
+  os_yq="/snap/${snap_name}/current/usr/bin/yq"
+
+  "${os_yq}" -y -i '."opensearch.hosts" = ["http://localhost:9200"]' "${conf}"
+  "${os_yq}" -y -i '."opensearch_security.enabled" = false' "${conf}"
+  "${os_yq}" -y -i '."server.host" = "0.0.0.0"' "${conf}"
+  chown snap_daemon:root "${conf}"
+
+  echo "=== opensearch_dashboards.yml ==="
+  "${os_yq}" \
+    '."opensearch.hosts", ."opensearch_security.enabled", ."server.host"' \
+    "${conf}"
+
+  # --- Start Dashboards and the exporter -----------------------------------
+  snap start "${snap_name}"
+
+  status_resp=""
+  resp=""
+  retry=0
+  while [ "${retry}" -lt 150 ]; do
+    resp="$(curl -s --max-time 5 "${status_url}" || true)"
+    state="$(echo "${resp}" | jq -r '.status.overall.state // empty' \
+      2>/dev/null || true)"
+    if [ "${state}" = "green" ] || [ "${state}" = "yellow" ]; then
+      status_resp="${resp}"
+      break
+    fi
+    retry=$((retry + 1))
+    sleep 2
+  done
+  if [ -z "${status_resp}" ]; then
+    echo "FAIL: OpenSearch Dashboards did not become ready in time"
+    echo "Last response: ${resp}"
+    dump_diagnostics
+    exit 1
+  fi
+  echo "Server responded: ${status_resp}"
 
   services="$(snap services "${snap_name}")"
   echo "${services}"
@@ -61,5 +121,56 @@ execute: |
       "'${expected_version}'"
     exit 1
   fi
+
+  # --- Integration: Dashboards must be talking to OpenSearch ---------------
+  dashboards_version="$(echo "${status_resp}" \
+    | jq -r '.version.number // empty')"
+  if [ "${dashboards_version}" != "${expected_version}" ]; then
+    echo "FAIL: /api/status reports version '${dashboards_version}'" \
+      "!= ${expected_version}."
+    exit 1
+  fi
+  echo "Dashboards reports version ${dashboards_version} via /api/status"
+
+  overall_state="$(echo "${status_resp}" \
+    | jq -r '.status.overall.state // empty')"
+  if [ "${overall_state}" != "green" ] && \
+     [ "${overall_state}" != "yellow" ]; then
+    echo "FAIL: Dashboards overall state is '${overall_state}'" \
+      "(expected green/yellow), so it is not connected to OpenSearch."
+    dump_diagnostics
+    exit 1
+  fi
+  echo "Dashboards overall state is '${overall_state}' (backend connected)"
+
+  # Confirm the backend really is the expected OpenSearch node.
+  node_name="$(echo "${os_resp}" | jq -r '.name // empty')"
+  if [ "${node_name}" != "cm0" ]; then
+    echo "FAIL: OpenSearch backend node is '${node_name}', expected cm0."
+    echo "${os_resp}"
+    exit 1
+  fi
+  echo "OpenSearch backend node is '${node_name}'"
+
+  # --- Prometheus exporter -------------------------------------------------
+  # Dashboards is up and connected over HTTP, so the exporter must report 1.
+  retry=0
+  up="$(dashboards_up)"
+  until [ "${up}" = "1.0" ]; do
+    retry=$((retry + 1))
+    if [ "${retry}" -ge 20 ]; then
+      break
+    fi
+    sleep 3
+    up="$(dashboards_up)"
+  done
+  if [ "${up}" != "1.0" ]; then
+    echo "FAIL: opensearch_dashboards_up is '${up}' but Dashboards is up" \
+      "and connected to OpenSearch."
+    curl -s "${metrics_url}" | grep "opensearch_dashboards" | tail -20
+    dump_diagnostics
+    exit 1
+  fi
+  echo "Exporter reports opensearch_dashboards_up=${up}"
 
   echo "All smoke tests passed."

@@ -1,4 +1,4 @@
-summary: OpenSearch Dashboards Rock Smoke Test
+summary: Charmed OpenSearch Dashboards Rock Smoke Test
 
 execute: |
   version="$(yq -r .version "${PROJECT_PATH}/rockcraft.yaml")"
@@ -43,6 +43,35 @@ execute: |
       return 1
   }
 
+  wait_for_exporter() {
+      for _ in $(seq 1 20); do
+          if curl -s -o /dev/null --max-time 3 \
+              http://127.0.0.1:9684/metrics; then
+              echo "Exporter answered on port 9684"
+              return 0
+          fi
+          sleep 3
+      done
+      echo "Error: exporter did not answer on port 9684 within 60s."
+      docker logs osd 2>&1 | tail -50 || true
+      return 1
+  }
+
+  check_service_active() {
+      local name="${1}"
+      local state
+      state="$(docker exec osd /usr/bin/pebble services \
+          | awk -v svc="${name}" '$1 == svc {print $3}')"
+      if [ "${state}" != "active" ]; then
+          echo "Error: ${name} service is '${state}'."
+          docker exec osd /usr/bin/pebble services || true
+          docker exec osd /usr/bin/pebble logs "${name}" -n 30 || true
+          docker logs osd 2>&1 | tail -50 || true
+          return 1
+      fi
+      echo "${name} service is active"
+  }
+
   # --- Start an OpenSearch backend from this repo --------------------------
   docker network create osd-net
   docker run \
@@ -63,8 +92,9 @@ execute: |
       --network osd-net \
       -e OPENSEARCH_HOSTS="[http://${os_ip}:9200]" \
       -p 5601:5601 \
+      -p 9684:9684 \
       --name osd \
-      opensearch-dashboards:"${version}"
+      opensearch-dashboards-charmed:"${version}"
 
   wait_for_dashboards
 
@@ -78,27 +108,13 @@ execute: |
   echo "=== pebble services ==="
   docker exec osd /usr/bin/pebble services
 
-  osd_status="$(docker exec osd /usr/bin/pebble services \
-      | awk '$1 == "opensearch-dashboards" {print $3}')"
-  if [ "${osd_status}" != "active" ]; then
-      echo "Error: opensearch-dashboards service is '${osd_status}'."
-      docker exec osd /usr/bin/pebble services || true
-      docker logs osd 2>&1 | tail -50 || true
-      exit 1
-  fi
-  echo "opensearch-dashboards service is active"
-
-  logfile="/var/log/opensearch-dashboards/opensearch_dashboards.log"
-  if ! docker exec osd test -s "${logfile}"; then
-      echo "Error: ${logfile} is missing or empty."
-      docker exec osd ls -l /var/log/opensearch-dashboards/ || true
-      exit 1
-  fi
-  echo "Dashboards is writing to ${logfile}"
-
-  echo -e "Status Response: \n ${status_resp}"
+  # Both services must be active, not backing off or errored.
+  check_service_active opensearch-dashboards
+  check_service_active prometheus-exporter
 
   # --- Integration: Dashboards must be talking to OpenSearch ---------------
+  echo -e "Status Response: \n ${status_resp}"
+
   dashboards_version="$(echo "${status_resp}" \
       | jq -r '.version.number // empty')"
   if [ "${dashboards_version}" != "${version}" ]; then
@@ -108,8 +124,6 @@ execute: |
   fi
   echo "Dashboards reports version ${dashboards_version} via /api/status"
 
-  # The overall status only reaches an available state once Dashboards has
-  # successfully connected to its OpenSearch backend.
   overall_state="$(echo "${status_resp}" \
       | jq -r '.status.overall.state // empty')"
   if [ "${overall_state}" != "green" ] && \
@@ -120,7 +134,6 @@ execute: |
   fi
   echo "Dashboards overall state is '${overall_state}' (backend connected)"
 
-  # Confirm OpenSearch is genuinely reachable and serving from the backend.
   os_resp="$(curl -sk --max-time 10 http://127.0.0.1:9200)"
   os_tagline="$(echo "${os_resp}" | jq -r '.tagline // empty')"
   os_version="$(echo "${os_resp}" | jq -r '.version.number')"
@@ -131,5 +144,27 @@ execute: |
       exit 1
   fi
   echo "OpenSearch backend is up: ${os_version}"
+
+  # --- Prometheus exporter -------------------------------------------------
+  wait_for_exporter
+
+  metrics_resp="$(curl -s --max-time 10 http://127.0.0.1:9684/metrics)"
+  if ! echo "${metrics_resp}" | grep -q "^opensearch_dashboards_up "; then
+      echo "Error: opensearch_dashboards_up not found in exporter metrics."
+      echo "${metrics_resp}" | tail -20
+      exit 1
+  fi
+  echo "Exporter exposes opensearch_dashboards_up"
+
+  # Dashboards is up and connected, so the exporter must report it as up (1).
+  dashboards_up="$(echo "${metrics_resp}" \
+      | awk '$1 == "opensearch_dashboards_up" {print $2}')"
+  if [ "${dashboards_up}" != "1.0" ]; then
+      echo "Error: opensearch_dashboards_up is '${dashboards_up}'" \
+        "but Dashboards is up and connected to OpenSearch."
+      echo "${metrics_resp}" | grep "opensearch_dashboards" | tail -20
+      exit 1
+  fi
+  echo "Exporter reports opensearch_dashboards_up=${dashboards_up}"
 
   echo "All smoke tests passed."

@@ -1,4 +1,4 @@
-project: opensearch-dashboards-rock
+project: opensearch-dashboards-charmed-rock
 
 backends:
   craft:
@@ -25,13 +25,13 @@ suites:
       sysctl -w vm.max_map_count=262144
       sysctl -w net.ipv4.tcp_retries2=5
 
+      # Import the rock into docker
       version="$(yq -r .version "${PROJECT_PATH}/rockcraft.yaml")"
       base="$(yq -r .base "${PROJECT_PATH}/rockcraft.yaml")"
 
-      # Import the rock into docker
       rockcraft.skopeo --insecure-policy copy \
         oci-archive:"${CRAFT_ARTIFACT}" \
-        docker-daemon:opensearch-dashboards:"${version}"
+        docker-daemon:opensearch-dashboards-charmed:"${version}"
 
       os_img="ghcr.io/canonical/opensearch:${version}-${base#*@}_edge"
       docker pull "${os_img}"
@@ -41,7 +41,7 @@ suites:
       docker network rm osd-net 2>/dev/null || true
       version="$(yq -r .version "${PROJECT_PATH}/rockcraft.yaml")"
       base="$(yq -r .base "${PROJECT_PATH}/rockcraft.yaml")"
-      docker rmi opensearch-dashboards:"${version}" 2>/dev/null || true
+      docker rmi opensearch-dashboards-charmed:"${version}" 2>/dev/null || true
       docker rmi opensearch:"${version}" 2>/dev/null || true
       docker rmi "ghcr.io/canonical/opensearch:${version}-${base#*@}_edge" \
         2>/dev/null || true

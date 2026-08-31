@@ -149,7 +149,17 @@ parts:
 
       # Download Opensearch Dashboards
       url="https://launchpad.net/opensearch-dashboards-releases/${series}/dashboards-${version}-${CRAFT_ARCH_BUILD_FOR}-${patch}/+download/${archive}"
-      curl  -L -o "${archive}" "${url}"
+
+      # Use local HTTP cache if available to avoid re-downloading the large
+      # tarball. Falls back to Launchpad when unset or unreachable.
+      cache_url="${OPS_TARBALL_CACHE_URL:-}"
+      if [ -n "${cache_url}" ] && \
+          curl -sf --max-time 5 -o "${archive}" "${cache_url}/${archive}"; then
+        echo "Using cached tarball from ${cache_url}/${archive}"
+      else
+        echo "Downloading tarball from Launchpad..."
+        curl -L -o "${archive}" "${url}"
+      fi
 
       # Extract and arrange
       tar -xzf "${archive}" -C "${CRAFT_PART_INSTALL}/" --strip-components=1
