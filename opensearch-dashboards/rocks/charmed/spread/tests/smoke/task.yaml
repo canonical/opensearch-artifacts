@@ -112,9 +112,25 @@ execute: |
   wait_for_opensearch
 
   # --- Dashboards ----------------------------------------------------------
+  # The charmed rock no longer reads configuration from the environment or
+  # applies any defaults at startup; that is the charm's responsibility.
+  # Render opensearch_dashboards.yml here with the settings the rock used to
+  # set for itself (opensearch.hosts, server.host, opensearch_security.enabled
+  # and path.data) and mount it into the container.
+  config_dir="$(mktemp -d)"
+  printf '%s\n' \
+      'server.host: "0.0.0.0"' \
+      'server.port: 5601' \
+      "opensearch.hosts: [\"http://${os_ip}:9200\"]" \
+      'opensearch_security.enabled: false' \
+      'path.data: /var/lib/opensearch-dashboards' \
+      > "${config_dir}/opensearch_dashboards.yml"
+  chmod 644 "${config_dir}/opensearch_dashboards.yml"
+  config_target=/etc/opensearch-dashboards/opensearch_dashboards.yml
+
   docker run -d \
       --network osd-net \
-      -e OPENSEARCH_HOSTS="[http://${os_ip}:9200]" \
+      -v "${config_dir}/opensearch_dashboards.yml:${config_target}:ro" \
       -p 5601:5601 \
       -p 9684:9684 \
       --name dashboards \
