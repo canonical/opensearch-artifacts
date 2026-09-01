@@ -42,8 +42,25 @@ docker run \
   -d --rm \
   -p 127.0.0.1:5601:5601 \
   -p 127.0.0.1:9684:9684 \
-  -e OPENSEARCH_HOSTS="[http://<your-opensearch-host>:<port>]" \
+  --name dashboards \
   opensearch-dashboards-charmed:${version}
+```
+
+The rock is configured entirely through its `opensearch_dashboards.yml` file. 
+Write the desired configuration into
+`/etc/opensearch-dashboards/opensearch_dashboards.yml` and restart the service via Pebble:
+
+```
+printf '%s\n' \
+  'server.host: "0.0.0.0"' \
+  'server.port: 5601' \
+  'opensearch.hosts: ["http://<your-opensearch-host>:<port>"]' \
+  'opensearch_security.enabled: false' \
+  'path.data: /var/lib/opensearch-dashboards' \
+  | docker exec -i dashboards \
+      sh -c "cat > /etc/opensearch-dashboards/opensearch_dashboards.yml && chmod 644 /etc/opensearch-dashboards/opensearch_dashboards.yml"
+
+docker exec dashboards /usr/bin/pebble restart opensearch-dashboards
 ```
 ### Example alongside containerized OpenSearch
 ```
@@ -63,8 +80,19 @@ opensearch_cont_ip=$(docker inspect -f '{{ .NetworkSettings.IPAddress }}' "${ope
 docker run -d --rm \
     -p 127.0.0.1:5601:5601 \
     -p 127.0.0.1:9684:9684 \
-    -e OPENSEARCH_HOSTS="[http://${opensearch_cont_ip}:9200]" \
+    --name dashboards \
     opensearch-dashboards-charmed:${version}
+
+printf '%s\n' \
+    'server.host: "0.0.0.0"' \
+    'server.port: 5601' \
+    "opensearch.hosts: [\"http://${opensearch_cont_ip}:9200\"]" \
+    'opensearch_security.enabled: false' \
+    'path.data: /var/lib/opensearch-dashboards' \
+    | docker exec -i dashboards \
+        sh -c "cat > /etc/opensearch-dashboards/opensearch_dashboards.yml && chmod 644 /etc/opensearch-dashboards/opensearch_dashboards.yml"
+
+docker exec dashboards /usr/bin/pebble restart opensearch-dashboards
 ```
 OpenSearch Dashboards will now be accessible at http://localhost:5601. The Prometheus exporter can be reached at http://localhost:9684.
 
