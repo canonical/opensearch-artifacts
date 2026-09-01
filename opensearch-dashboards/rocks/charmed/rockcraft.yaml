@@ -25,8 +25,6 @@ services:
     startup: enabled
     summary: Start Opensearch Dashboards
     command: '/bin/bash /bin/start.sh'
-    "user": "_daemon_"
-    "group": "_daemon_"
     environment:
       OPENSEARCH_DASHBOARDS_HOME: /usr/share/opensearch-dashboards
       OPENSEARCH_DASHBOARDS_BIN: /usr/share/opensearch-dashboards/bin
@@ -41,8 +39,6 @@ services:
     startup: enabled
     summary: Start Prometheus Exporter
     command: '/bin/bash /bin/start-exporter.sh'
-    user: "_daemon_"
-    group: "_daemon_"
     environment:
       OPENSEARCH_DASHBOARDS_PATH_CONF: /etc/opensearch-dashboards
       PYTHONPATH: "/usr/lib/python3/dist-packages:$PYTHONPATH"
