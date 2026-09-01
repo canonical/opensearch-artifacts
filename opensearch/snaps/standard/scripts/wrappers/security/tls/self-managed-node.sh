@@ -3,11 +3,13 @@
 set -eu
 
 
+
+source "${OPS_ROOT}"/helpers/snap-logger.sh "self-managed-node"
 source "${OPS_ROOT}"/helpers/set-conf.sh
 
 usage() {
 cat << EOF
-usage: init.sh --name name ...
+usage: self-managed-node.sh --name name ...
 To be ran / setup once per cluster.
 --name            (Required)    Name of the node
 --root-password   (Optional)    Passphrase of the root key when signing. If unset, the root key is expected unencrypted.

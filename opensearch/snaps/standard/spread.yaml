@@ -17,12 +17,7 @@ suites:
       sysctl -w vm.max_map_count=262144
       sysctl -w net.ipv4.tcp_retries2=5
       snap install "$CRAFT_ARTIFACT" --dangerous
-      # mount-observe is REQUIRED for the daemon: without it the JVM dies
-      # with "Mount point not found". Connect all interfaces, then restart
-      # the daemon so the tests always start from a healthy node.
-      snap connect opensearch:mount-observe
       bash "$(dirname "$CRAFT_ARTIFACT")/setup-dev-env.sh"
-      snap restart opensearch.daemon
     restore-each: |
       snap remove opensearch --purge
 

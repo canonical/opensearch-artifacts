@@ -10,11 +10,22 @@ function remove_yaml_prop() {
     local target_file="${1}"
     local key_path="${2}"
 
-    if [[ ${key_path} != ^.* ]]; then
-        key_path=".${key_path}"
-    fi
+    # traversal must be done through the "/" separator to allow for "." in key names
+    IFS='/' read -r -a keys <<< "${key_path}"
 
-    "${SNAP}"/usr/bin/yq -y -i "del(${key_path})" "${target_file}"
+    expression=""
+    for key in "${keys[@]}"
+    do
+        prefix=""
+        suffix=""
+        if [[ "${key}" != [* ]]; then
+            prefix=".\""
+            suffix="\""
+        fi
+        expression="${expression}${prefix}${key}${suffix}"
+    done
+
+    "${SNAP}"/usr/bin/yq -y -i "del(${expression})" "${target_file}"
 }
 
 

@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+set -eux
+
+source "${OPS_ROOT}"/helpers/snap-logger.sh "hooks-connect-plug-mount-observe"
+
+# Restart OpenSearch if the plug is connected or disconnected
+snapctl restart opensearch.daemon

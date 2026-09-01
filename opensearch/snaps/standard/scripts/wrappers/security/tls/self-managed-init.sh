@@ -2,13 +2,13 @@
 
 set -eu
 
-
+source "${OPS_ROOT}"/helpers/snap-logger.sh "self-managed-init"
 source "${OPS_ROOT}"/helpers/set-conf.sh
 
 
 usage() {
 cat << EOF
-usage: init.sh --target-dir dir ...
+usage: self-managed-init.sh --target-dir dir ...
 To be ran / setup once per cluster.
 --root-password   (Optional)    Password for encrypting the root key. If unset, the keys are generated unencrypted.
 --admin-password  (Optional)    Password for encrypting the admin key. If unset, the key is generated unencrypted.

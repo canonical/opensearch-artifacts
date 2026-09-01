@@ -81,11 +81,6 @@ function set_kernel_prerequisites () {
 
 
 function bootstrap_cluster () {
-    # Configure the cluster with sensible defaults (single-node ready) and
-    # generate the TLS material required by the security plugin: root, admin
-    # and node certificates with unencrypted keys.
-    # Users can re-run 'opensearch.setup' afterwards to configure the
-    # cluster the way they want.
     bash "${OPS_ROOT}"/setup.sh \
         --node-roles cluster_manager,data \
         --tls-init-setup yes

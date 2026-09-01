@@ -2,20 +2,15 @@
 
 set -eu
 
-source "${OPS_ROOT}"/helpers/snap-logger.sh "setup"
-source "${OPS_ROOT}"/helpers/set-conf.sh
-source "${OPS_ROOT}"/helpers/io.sh
-
-
 usage() {
 cat << EOF
-usage: init.sh --root-password password ...
+usage: setup.sh --root-password password ...
 To be ran / setup once per cluster.
---cluster-name            (Required)  Name of the cluster
---node-name               (Required)  Name of the current node
---node-roles              (Required)  Type of the node, array combination of: [cluster_manager, data, voting_only, ..]
---node-host               (Required)  IP address used to bind the node, default: [ _local_, _site_ ]
---seed-hosts              (Required)  Private IP of all the cluster-manager eligible nodes, default: ["127.0.0.1", "[::1]"]
+--cluster-name            (Optional)  Name of the cluster
+--node-name               (Optional)  Name of the current node, default: opensearch-12345678
+--node-roles              (Optional)  Type of the node, array combination of: [cluster_manager, data, voting_only, ..]
+--node-host               (Optional)  IP address used to bind the node, default: [ _local_, _site_ ]
+--seed-hosts              (Optional)  Private IP of all the cluster-manager eligible nodes, default: ["127.0.0.1", "[::1]"]
 --security-disabled       (Optional)  Enum of either yes, no (default). Enables or disables the security plugin.
 --tls-self-managed        (Optional)  Enum of either yes (default), no. Generates and self-signs the certificates.
 --tls-init-setup          (Optional)  Enum of either yes, no (default). Creates a root and admin certs if set to yes.
@@ -29,6 +24,15 @@ To be ran / setup once per cluster.
 --help                                Shows help menu
 EOF
 }
+
+# Handle --help argument before snap-logger
+for arg in "$@"; do
+    if [ "${arg}" == "--help" ]; then
+        usage
+        exit 0
+    fi
+done
+
 
 
 # Args
@@ -69,7 +73,6 @@ function parse_args() {
         "tls-priv-key-node-pass"
         "tls-node-subject"
         "tls-for-rest"
-        "help"
     )
     # shellcheck disable=SC2155
     local opts=$(getopt \
@@ -127,9 +130,6 @@ function parse_args() {
             --tls-for-rest) shift
                 tls_for_rest=$1
                 ;;
-            --help) usage
-                exit
-                ;;
         esac
         shift
     done
@@ -142,7 +142,9 @@ function set_defaults () {
     fi
 
     if [ -z "${node_name}" ]; then
-        node_name="opensearch-node-1"
+        # Generate random hash suffix
+        suffix=$(openssl rand -hex 4)
+        node_name="opensearch-${suffix}"
     fi
 
     if [ -z "${node_roles}" ]; then
@@ -191,6 +193,34 @@ function set_defaults () {
 parse_args "$@"
 set_defaults
 
+# Tell users what values we are using for the configuration
+echo "Configuring OpenSearch with the following values:"
+echo "cluster.name: ${cluster_name}"
+echo "node.name: ${node_name}"
+echo "node.roles: ${node_roles}"
+echo "network.host: ${node_host}"
+echo "discovery.seed_hosts: ${seed_hosts}"
+if [ -n "${initial_cluster_manager_nodes}" ]; then
+    echo "cluster.initial_cluster_manager_nodes: ${initial_cluster_manager_nodes}"
+fi
+echo "plugins.security.disabled: ${security_disabled}"
+if [ "${tls_self_managed}" == "yes" ]; then
+    echo "TLS certificates will be self-managed."
+    if [ "${tls_init_setup}" == "yes" ]; then
+        echo "Root and admin certificates will be generated."
+    else
+        echo "Root and admin certificates will not be generated."
+    fi
+    echo "Node certificate will be generated."
+else
+    echo "TLS certificates will not be self-managed. If this is a reconfiguration, existing certificates will be cleaned up."
+fi
+
+
+
+source "${OPS_ROOT}"/helpers/snap-logger.sh "setup"
+source "${OPS_ROOT}"/helpers/set-conf.sh
+source "${OPS_ROOT}"/helpers/io.sh
 
 opensearch_yaml="${OPENSEARCH_PATH_CONF}/opensearch.yml"
 set_yaml_prop "${opensearch_yaml}" "cluster.name" "${cluster_name}"
@@ -209,8 +239,8 @@ else
     set_yaml_prop "${opensearch_yaml}" "plugins.security.disabled" "false"
 fi
 
+TLS_DIR="${OPS_ROOT}/security/tls"
 if [ "${tls_self_managed}" == "yes" ]; then
-    TLS_DIR="${OPS_ROOT}/security/tls"
 
     if [ "${tls_init_setup}" == "yes" ]; then
         # create root and admin certs
@@ -227,6 +257,12 @@ if [ "${tls_self_managed}" == "yes" ]; then
         for key in "${keys[@]}"; do
             set_access_restrictions "${OPENSEARCH_PATH_CERTS}/${key}.pem" 664
         done
+    else
+        # If tls-init-setup is set to "no" we clean up only the admin certificates
+        # since the root CA is still needed for signing node certificates.
+        source "${TLS_DIR}"/cleanup.sh
+
+        cleanup_admin_certs
     fi
 
     # create node cert
@@ -243,4 +279,11 @@ if [ "${tls_self_managed}" == "yes" ]; then
     for key in "${keys[@]}"; do
         set_access_restrictions "${OPENSEARCH_PATH_CERTS}/${key}.pem" 664
     done
+else
+    source "${TLS_DIR}"/cleanup.sh
+
+    cleanup_root_certs
+    cleanup_admin_certs
+    cleanup_node_certs
 fi
+

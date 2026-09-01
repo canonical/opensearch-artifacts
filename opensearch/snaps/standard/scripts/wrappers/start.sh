@@ -57,18 +57,14 @@ function configure_qat() {
 }
 
 function start_opensearch () {
-    # mount-observe is REQUIRED, not just observability: the JVM must read
-    # /proc/mounts to resolve the data directory filesystem (NodeEnvironment
-    # -> Files.getFileStore). Without it the node cannot bootstrap at all
-    # and dies with "Mount point not found".
+    # This is a must for starting the snap 
+    # since the snap is confined and cannot access the host system
     exit_if_missing_perm "mount-observe"
 
-    # The remaining interfaces are only needed for observability features:
-    # warn instead of exiting so the node still runs when they are missing.
     warn_if_missing_perm "log-observe"
     warn_if_missing_perm "sys-fs-cgroup-service"
     warn_if_missing_perm "system-observe"
-
+    # This is not autoconnected
     warn_if_missing_perm "process-control"
 
     configure_qat
