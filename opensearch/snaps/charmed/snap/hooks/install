@@ -77,10 +77,30 @@ function create_editable_cacerts_trust_store() {
 }
 
 
+function register_bcfips_security_provider() {
+    # After https://github.com/opensearch-project/OpenSearch/pull/17507 change
+    # We need to register BCFIPS or gcs will not work in charm
+    local overlay="${OPENSEARCH_PATH_CONF}/bcfips.security"
+    local jdk_security="${JAVA_HOME}/conf/security/java.security"
+
+    local next_index
+    next_index=$(grep -oE '^security\.provider\.[0-9]+=' "${jdk_security}" \
+        | grep -oE '[0-9]+' | sort -n | tail -1)
+    next_index=$((next_index + 1))
+
+    echo "security.provider.${next_index}=org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider" \
+        | tee "${overlay}"
+
+    echo "-Djava.security.properties=${SNAP_DATA_CURRENT}/etc/opensearch/bcfips.security" \
+        | tee -a "${OPENSEARCH_PATH_CONF}/jvm.options"
+}
+
+
 create_file_structure
 set_base_config_props
 set_prometheus_exporter_config_props
 create_editable_cacerts_trust_store
+register_bcfips_security_provider
 
 #  "${SNAP_COMMON}"
 declare -a folders=("${SNAP_DATA}")
