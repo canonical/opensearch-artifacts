@@ -77,9 +77,6 @@ parts:
       mv "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-keystore.orig" \
           "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-keystore"
 
-      ## for deb packages
-      # Split across two lines for the 80-column limit. Single quotes are
-      # required: these are dpkg field names, not shell variables.
       dpkg_fmt='${db:Status-Abbrev},${binary:Package},${Version}'
       dpkg_fmt="${dpkg_fmt},"'${source:Package},${Source:Version}\n'
       dpkg-query -f "${dpkg_fmt}" -W > ${rocks}/dpkg.query
@@ -117,10 +114,6 @@ parts:
           "${CRAFT_PRIME}/usr/share/tmp" \
           "${CRAFT_PRIME}/var/log/opensearch" \
           "${CRAFT_PRIME}/etc/opensearch/certificates"
-
-      # No k-NN handling here, unlike the standard and charmed rocks: the
-      # chiseled snap removes opensearch-knn, so there are no native
-      # libraries to relocate.
 
       # --- CA truststore ---
       CONTAINER_CONF_DIR="/etc/opensearch"
