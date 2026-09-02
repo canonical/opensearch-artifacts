@@ -40,9 +40,15 @@ docker run \
   -d --rm \
   -p 127.0.0.1:5601:5601 \
   -p 127.0.0.1:9684:9684 \
+  -e SERVER_HOST="0.0.0.0" \
+  -e OPENSEARCH_SECURITY_ENABLED="false" \
   -e OPENSEARCH_HOSTS="[http://<your-opensearch-host>:<port>]" \
   opensearch-dashboards-charmed:${version}
 ```
+
+You need to set SERVER_HOST, OPENSEARCH_SECURITY_ENABLED, OPENSEARCH_HOSTS through environments 
+because charmed version does not set defaults to these values compared to non-charmed version
+
 ### Example alongside containerized OpenSearch
 ```
 version=$(yq .version rockcraft.yaml)
@@ -61,6 +67,8 @@ opensearch_cont_ip=$(docker inspect -f '{{ .NetworkSettings.IPAddress }}' "${ope
 docker run -d --rm \
     -p 127.0.0.1:5601:5601 \
     -p 127.0.0.1:9684:9684 \
+    -e SERVER_HOST="0.0.0.0" \
+    -e OPENSEARCH_SECURITY_ENABLED="false" \
     -e OPENSEARCH_HOSTS="[http://${opensearch_cont_ip}:9200]" \
     opensearch-dashboards-charmed:${version}
 ```
