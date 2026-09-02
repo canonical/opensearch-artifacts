@@ -25,12 +25,6 @@ opensearch_dashboards_vars=(
 
 OPENSEARCH_DASHBOARDS_CONF="${OPENSEARCH_DASHBOARDS_PATH_CONF}/opensearch_dashboards.yml"
 
-function set_base_config_props () {
-    set_yaml_prop "${OPENSEARCH_DASHBOARDS_CONF}" "server.host" "0.0.0.0"
-    set_yaml_prop "${OPENSEARCH_DASHBOARDS_CONF}" "opensearch_security.enabled" "false"
-    set_yaml_prop "${OPENSEARCH_DASHBOARDS_CONF}" "path.data" "${OPENSEARCH_DASHBOARDS_VARLIB}"
-}
-
 function read_env_vars () {
     # transforms config variables to possible env vars. eg opensearch.hosts -> OPENSEARCH_HOSTS
     # see https://github.com/opensearch-project/OpenSearch-Dashboards/blob/72fa1239edc09780bdb854bef3c9ac70537ffd39/src/dev/build/tasks/os_packages/docker_generator/resources/bin/opensearch-dashboards-docker#L170
@@ -50,6 +44,5 @@ function start_opensearch_dashboards () {
         -l "${OPENSEARCH_DASHBOARDS_VARLOG}"/opensearch_dashboards.log
 }
 
-set_base_config_props
 read_env_vars
 start_opensearch_dashboards

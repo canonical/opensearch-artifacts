@@ -114,6 +114,8 @@ execute: |
   # --- Dashboards ----------------------------------------------------------
   docker run -d \
       --network osd-net \
+      -e SERVER_HOST="0.0.0.0" \
+      -e OPENSEARCH_SECURITY_ENABLED="false" \
       -e OPENSEARCH_HOSTS="[http://${os_ip}:9200]" \
       -p 5601:5601 \
       -p 9684:9684 \
