@@ -10,7 +10,7 @@ For more information on rocks, visit the [rockcraft Github](https://github.com/c
 
 ## Bundled plugins
 
-Unlike the standard and charmed rocks, this image ships only the `opensearch-security` plugin. Every other bundled plugin is removed while building the [opensearch-chiseled Snap](https://github.com/canonical/opensearch-artifacts/tree/2/edge/opensearch/snaps/chiseled), including `opensearch-knn` and `opensearch-performance-analyzer`. As a consequence this rock does not relocate the k-NN native libraries and does not add them to `java.library.path`.
+Unlike the standard and charmed rocks, this image ships only the `opensearch-security` plugin. 
 
 ## Version
 
@@ -80,7 +80,7 @@ container_0_id=$(docker run \
   -p 9200:9200 \
   --name cm0 \
   opensearch-chiseled:"${version}")
-container_0_ip=$(docker inspect -f '{{ .NetworkSettings.IPAddress }}' "${container_0_id}")
+container_0_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${container_0_id}")
 
 # wait a bit for it to fully initialize
 sleep 15s
@@ -94,7 +94,7 @@ container_1_id=$(docker run \
     -p 9201:9200 \
     --name data1 \
     opensearch-chiseled:"${version}")
-container_1_ip=$(docker inspect -f '{{ .NetworkSettings.IPAddress }}' "${container_1_id}")
+container_1_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${container_1_id}")
 
 # wait a bit for it to fully initialize
 sleep 15s
