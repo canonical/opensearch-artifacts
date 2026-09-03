@@ -1,7 +1,7 @@
 # Build and test rocks against snaps published from a pull request.
 # Each rock is retargeted to the PR snap channel, tested on amd64 and arm64,
 # uploaded as a packed-rock artifact, and scanned by Trivy before the workflow passes.
-# Example of the uploaded artifact: packed-rock-mongodb-server-sharded--platform-amd
+# Example of the uploaded artifact: packed-rock-opensearch-opensearch-rocks-standard--platform-amd64
 
 name: Rock tests on PR
 
@@ -51,11 +51,22 @@ jobs:
           rock-path: ${{ matrix.rock.path }}
           runner: ${{ matrix.runner.label }}
 
+      - name: Compute artifact name
+        id: artifact-metadata
+        env:
+          ROCK_NAME: ${{ matrix.rock.name }}
+          ROCK_PATH: ${{ matrix.rock.path }}
+          PLATFORM: ${{ matrix.runner.platform }}
+        run: |
+          path_slug="${ROCK_PATH#./}"
+          path_slug="${path_slug//\//-}"
+          echo "artifact_name=packed-rock-${ROCK_NAME}-${path_slug}--platform-${PLATFORM}" >> "$GITHUB_OUTPUT"
+
       # The spread test builds the rock and we upload the artifact
       - name: Upload rock for Trivy
         uses: actions/upload-artifact@v7
         with:
-          name: packed-rock-${{ matrix.rock.name }}--platform-${{ matrix.runner.platform }}
+          name: ${{ steps.artifact-metadata.outputs.artifact_name }}
           path: ${{ matrix.rock.path }}/*.rock
           if-no-files-found: error
 
