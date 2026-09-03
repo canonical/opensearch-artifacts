@@ -20,7 +20,7 @@ execute: |
       echo "Error: ${name} did not answer on port ${port} within 180s."
       # OpenSearch logs to a file, not to stdout, so docker logs is useless.
       docker exec "${name}" \
-          sh -c 'tail -50 /var/log/opensearch/*.log' || true
+          sh -c 'tail -n 50 /var/log/opensearch/logs/*.log' || true
       return 1
   }
 
