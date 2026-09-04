@@ -11,6 +11,11 @@ suites:
     summary: General integration tests
     prepare-each: |
       apt install -y curl
+      # Kernel prerequisites must be set before install: the install hook
+      # boots the daemon and initializes the security index.
+      sysctl -w vm.swappiness=0
+      sysctl -w vm.max_map_count=262144
+      sysctl -w net.ipv4.tcp_retries2=5
       snap install "$CRAFT_ARTIFACT" --dangerous
       bash "$(dirname "$CRAFT_ARTIFACT")/setup-dev-env.sh"
     restore-each: |

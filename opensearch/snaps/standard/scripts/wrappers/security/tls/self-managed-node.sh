@@ -3,16 +3,17 @@
 set -eu
 
 
-source "${OPS_ROOT}"/helpers/set-conf.sh
 
+source "${OPS_ROOT}"/helpers/snap-logger.sh "self-managed-node"
+source "${OPS_ROOT}"/helpers/set-conf.sh
 
 usage() {
 cat << EOF
-usage: init.sh --root-password password ...
+usage: self-managed-node.sh --name name ...
 To be ran / setup once per cluster.
 --name            (Required)    Name of the node
---root-password   (Required)    Password for encrypting the root key
---node-password   (Optional)    Password for encrypting the node key
+--root-password   (Optional)    Passphrase of the root key when signing. If unset, the root key is expected unencrypted.
+--node-password   (Optional)    Password for encrypting the node key. If unset, the key is generated unencrypted.
 --node-subject    (Optional)    Subject for the node certificate
 --rest-with-tls   (Optional)    Enum of either: yes (default), no. Enables the certificate for both the transport and rest layers or just the former
 --target-dir      (Optional)    Where the certificates get stored
@@ -78,10 +79,11 @@ function parse_args () {
     done
 }
 
+
 function validate_args () {
     err_message=""
-    if [ -z "${root_password}" ]; then
-        err_message="- '--root-password' is required \n"
+    if [ -z "${name}" ]; then
+        err_message="- '--name' is required \n"
     fi
 
     if [ -n "${err_message}" ]; then
@@ -130,8 +132,9 @@ inverted_node_subject=$(
         -subject \
         -nameopt RFC2253 \
         -noout \
-        -in "${target_dir}/node-${name}.pem" \
-        -passin pass:"${node_password}"
+        -in "${target_dir}/node-${name}.pem"
 )
 inverted_node_subject="${inverted_node_subject##subject=}"
-set_yaml_prop "${opensearch_yaml}" "plugins.security.nodes_dn" "[ \"${inverted_node_subject}\" ]" "yes" "no"
+# Replace (not append): re-running setup replaces the node certificate,
+# the previous DN must not linger in the allowlist.
+set_yaml_prop "${opensearch_yaml}" "plugins.security.nodes_dn" "[ \"${inverted_node_subject}\" ]" "no" "no"
