@@ -233,6 +233,27 @@ apps:
     environment:
       bin_script: opensearch-performance-analyzer/performance-analyzer-agent-cli
 
+  plugins-security-securityadmin:
+    command: opt/opensearch/plugins-wrapper.sh
+    plugs:
+      - network
+      - network-bind
+    environment:
+      plugin_tool: opensearch-security/tools/securityadmin.sh
+
+  plugins-security-hash:
+    command: opt/opensearch/plugins-wrapper.sh
+    environment:
+      plugin_tool: opensearch-security/tools/hash.sh
+
+  plugins-security-audit-config-migrater:
+    command: opt/opensearch/plugins-wrapper.sh
+    plugs:
+      - network
+      - network-bind
+    environment:
+      plugin_tool: opensearch-security/tools/audit_config_migrater.sh
+
   keytool:
     command: opt/opensearch/keytool-wrapper.sh
     plugs:

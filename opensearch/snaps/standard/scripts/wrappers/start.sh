@@ -57,9 +57,7 @@ function configure_qat() {
 }
 
 function start_opensearch () {
-    # This is a must for starting the snap 
-    # since the snap is confined and cannot access the host system
-    exit_if_missing_perm "mount-observe"
+    warn_if_missing_perm "mount-observe"
 
     warn_if_missing_perm "log-observe"
     warn_if_missing_perm "sys-fs-cgroup-service"
