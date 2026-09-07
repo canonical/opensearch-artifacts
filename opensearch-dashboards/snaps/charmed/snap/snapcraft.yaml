@@ -1,7 +1,7 @@
 name: opensearch-dashboards-charmed
 base: core26
 
-version: '3.8.0'
+version: '3.7.0'
 
 # yamllint disable-line rule:line-length
 summary: 'OpenSearch Dashboards: community-driven OpenSearch visualization suite.'
@@ -140,15 +140,15 @@ parts:
 
       # If architecture is arm64
       if [[ "$CRAFT_ARCH_BUILD_FOR" == "arm64" ]]; then
-        release_date="20260827083212"
+        release_date="20260710143857"
         archive="opensearch-dashboards-${version}-${patch}-${release_date}-linux-arm64.tar.gz"
       else
-        release_date="20260827083326"
+        release_date="20260710153013"
         archive="opensearch-dashboards-${version}-${patch}-${release_date}-linux-x64.tar.gz"
       fi
 
       # Download Opensearch Dashboards
-      url="https://launchpad.net/opensearch-dashboards-releases/${series}/${version}-${CRAFT_ARCH_BUILD_FOR}-${patch}/+download/${archive}"
+      url="https://launchpad.net/opensearch-dashboards-releases/${series}/dashboards-${version}-${CRAFT_ARCH_BUILD_FOR}-${patch}/+download/${archive}"
 
       # Use local HTTP cache if available to avoid re-downloading the large
       # tarball. Falls back to Launchpad when unset or unreachable.
