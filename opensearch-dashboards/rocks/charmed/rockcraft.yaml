@@ -4,7 +4,7 @@ name: opensearch-dashboards-charmed
 base: ubuntu@26.04 # the base environment for this rock
 license: Apache-2.0
 
-version: '3.7.0' # just for humans. Semantic versioning is recommended
+version: '3.8.0' # just for humans. Semantic versioning is recommended
 
 # yamllint disable-line rule:line-length
 summary: 'Charmed OpenSearch Dashboards: community-driven OpenSearch visualization suite.'

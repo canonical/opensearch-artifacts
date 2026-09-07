@@ -1,7 +1,7 @@
 name: opensearch-charmed # you probably want to 'snapcraft register <name>'
 base: core26 # the base snap is the execution environment for this snap
 
-version: '3.7.0' # just for humans, typically '1.2+git' or '1.3.2'
+version: '3.8.0' # just for humans, typically '1.2+git' or '1.3.2'
 
 # yamllint disable-line rule:line-length
 summary: 'OpenSearch: community-driven, Apache 2.0-licensed search and analytics suite.'
@@ -286,10 +286,10 @@ parts:
       patch="ubuntu0"
       # If architecture is arm64
       if [[ "$CRAFT_ARCH_BUILD_FOR" == "arm64" ]]; then
-        release_date="20260710182315"
+        release_date="20260903084533"
         archive="opensearch-${version}-${patch}-${release_date}-linux-arm64.tar.gz"
       else
-        release_date="20260711113051"
+        release_date="20260903080321"
         archive="opensearch-${version}-${patch}-${release_date}-linux-x64.tar.gz"
       fi
 
