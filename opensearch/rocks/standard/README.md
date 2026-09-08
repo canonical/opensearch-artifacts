@@ -1,143 +1,107 @@
-# OpenSearch Rock (OCI Image)
+# OpenSearch rock
+[![Publish artifacts](https://github.com/canonical/opensearch-artifacts/actions/workflows/publish.yaml/badge.svg)](https://github.com/canonical/opensearch-artifacts/actions/workflows/publish.yaml)
 
-[OpenSearch](https://opensearch.org/) is an open-source search and analytics suite. Developers build solutions for search, data observability, data ingestion and more using OpenSearch. OpenSearch is offered under the Apache Software Licence, version 2.0.
+This directory contains the packaging metadata for creating a rock of [OpenSearch](https://opensearch.org/) built from the [opensearch snap](../../snaps/standard). A rock is an Open Container Initiative (OCI) image; for more information on rocks, visit the [rockcraft Github](https://github.com/canonical/rockcraft).
 
-The [OpenSearch rock](https://github.com/canonical/opensearch-artifacts) is an Open Container Initiative (OCI) image derived from the [opensearch Snap](https://snapcraft.io/opensearch). The tool used to create this rock is called [Rockcraft](https://canonical-rockcraft.readthedocs-hosted.com/en/latest/index.html).
+The image is built for `amd64` and `arm64`, runs as the unprivileged `_daemon_`
+user, and is published to the GitHub Container Registry:
 
-This repository contains the packaging metadata for creating the OpenSearch rock. This rock image is based on the [opensearch Snap](https://github.com/canonical/opensearch-artifacts/tree/add-standard-3-edge-rock/opensearch/snaps/standard).
+```bash
+docker pull ghcr.io/canonical/opensearch:3.7.0-26.04_edge
+```
 
-For more information on rocks, visit the [rockcraft Github](https://github.com/canonical/rockcraft).
+## Running the rock
+The Pebble service `opensearch` starts on boot and configures the node from
+environment variables:
 
-## Version
+| Variable            | Default                | Description                                        |
+| ------------------- | ---------------------- | -------------------------------------------------- |
+| `CLUSTER_NAME`      | `opensearch-dev`       | `cluster.name`                                     |
+| `NODE_NAME`         | `node-0`               | `node.name`                                        |
+| `NODE_ROLES`        | `cluster_manager,data` | Comma-separated `node.roles`                       |
+| `INITIAL_CM_NODES`  | unset                  | Comma-separated `cluster.initial_cluster_manager_nodes` |
+| `SEED_HOSTS`        | unset                  | Comma-separated `discovery.seed_hosts`             |
+| `NETWORK_HOST`      | `_local_,_site_`       | Comma-separated `network.host`                     |
 
-The OpenSearch rock release aligns with the [OpenSearch upstream major version](https://opensearch.org/docs/latest/version-history/) naming. OpenSearch releases major versions such as 1.0, 2.0, and so on.
+```bash
+docker run -d --rm -it \
+  -e NODE_NAME=cm0 \
+  -e INITIAL_CM_NODES=cm0 \
+  -p 9200:9200 \
+  --name cm0 \
+  ghcr.io/canonical/opensearch:3.7.0-26.04_edge
 
-## Supported Platforms
+curl -XGET http://127.0.0.1:9200
+```
 
-The rock is built for `amd64` and `arm64` architectures. Use `rockcraft pack` on a host matching the target architecture, or pass `--platform` to cross-build (e.g. `rockcraft pack --platform arm64`).
+**NOTE:** the entrypoint sets `plugins.security.disabled: true`, so the REST API
+is served over plain HTTP. This image IS NOT suitable for production AS IS.
+Use it through the OpenSearch K8s charm, which configures security.
 
-## Rock Usage
-
-### Building the Rock
-
+## Building the rock
 The steps outlined below are based on the assumption that you are building the rock with the latest LTS of Ubuntu.  
-If you are using another version of Ubuntu or another operating system, the process may be different. To avoid any issue with other operating systems you can simply build the image with [multipass](https://multipass.run/):
+If you are using another version of Ubuntu or another operating system, the process may be different.
 
-sudo snap install multipass
-multipass launch 22.04 -n rock-dev
-multipass shell rock-dev
-
-#### Clone Repository
-
-git clone https://github.com/canonical/opensearch-artifacts.git
+### Clone Repository
+```bash
+git clone git@github.com:canonical/opensearch-artifacts.git
 cd opensearch-artifacts/opensearch/rocks/standard
-
-#### Installing Prerequisites
-
-sudo snap install rockcraft --classic --edge
+```
+### Installing Prerequisites
+```bash
+sudo snap install rockcraft --edge --classic
 sudo snap install docker
 sudo snap install lxd
-
-#### Configuring Prerequisites
-
-sudo usermod -aG docker $USER 
+```
+### Configuring Prerequisites
+```bash
+sudo usermod -aG docker $USER
 sudo lxd init --auto
 
-**NOTE:** You will need to open a new shell for the group change to take effect (i.e. `su - $USER`)
-
-#### Packing and Running the Rock
-
+# required by OpenSearch on the host
+sudo sysctl -w vm.swappiness=0
+sudo sysctl -w vm.max_map_count=262144
+sudo sysctl -w net.ipv4.tcp_retries2=5
+```
+*_NOTE:_* You will need to open a new shell for the group change to take effect (i.e. `su - $USER`)
+### Packing and Running the rock
+```bash
 rockcraft pack
 
-version="$(cat rockcraft.yaml | yq .version)"
+version="$(yq .version rockcraft.yaml | tr -d '"')"
 arch="$(dpkg --print-architecture)"
 
-rockcraft.skopeo --insecure-policy \
-  copy \
+rockcraft.skopeo --insecure-policy copy \
   oci-archive:opensearch_"${version}"_"${arch}".rock \
   docker-daemon:opensearch:"${version}"
 
-docker run \
-  -d --rm -it \
+docker run -d --rm -it \
   -e NODE_NAME=cm0 \
   -e INITIAL_CM_NODES=cm0 \
   -p 9200:9200 \
   --name cm0 \
   opensearch:"${version}"
-
-### Testing a multi nodes deployment:
-
-```
-# create first cm_node container
-container_0_id=$(docker run \
-  -d --rm -it \
-  -e NODE_NAME=cm0 \
-  -e INITIAL_CM_NODES=cm0 \
-  -p 9200:9200 \
-  --name cm0 \
-  opensearch:"${version}")
-container_0_ip=$(docker inspect -f '{{ .NetworkSettings.IPAddress }}' "${container_0_id}")
-
-# wait a bit for it to fully initialize
-sleep 15s
-
-# create data/voting_only node container
-container_1_id=$(docker run \
-    -d --rm -it \
-    -e NODE_NAME=data1 \
-    -e SEED_HOSTS="${container_0_ip}" \
-    -e NODE_ROLES=data,voting_only \
-    -p 9201:9200 \
-    --name data1 \
-    opensearch:"${version}")
-container_1_ip=$(docker inspect -f '{{ .NetworkSettings.IPAddress }}' "${container_1_id}")
-
-# wait a bit for it to fully initialize
-sleep 15s
-
-# create 2nd cm_node container
-container_2_id=$(docker run \
-    -d --rm -it \
-    -e NODE_NAME=cm1 \
-    -e SEED_HOSTS="${container_0_ip},${container_1_ip}" \
-    -e INITIAL_CM_NODES="cm0,cm1" \
-    -p 9202:9200 \
-    --name cm1 \
-    opensearch:"${version}")
-
-# wait a bit for it to fully initialize
-sleep 15s
 ```
 
-You now can query the nodes:
+The rock stages the snap from the `3/edge` channel, so a local build picks up
+whatever revision is currently live on the store.
 
+## Testing the rock
+This variant ships a [spread](https://github.com/canonical/spread) smoke suite
+that forms a three-node cluster (`cm0`, `cm1`, `data1`) in Docker and asserts
+that all three nodes join. It runs against a `craft` (LXD) backend on
+`ubuntu-26.04`:
+
+```bash
+rockcraft test
 ```
-curl -X GET http://127.0.1.1:9200/_nodes/
-```
-
-And expect to see 3 nodes.
-
-**NOTE:** This deployment IS NOT suitable for production AS IS. As this deployment disables and does NOT configure the security of OpenSearch. Please use it as part of the Juju OpenSearch K8s charm once ready.
 
 ## License
-
-The OpenSearch rock is free software, distributed under the Apache Software License, version 2.0. See [LICENSE](https://github.com/canonical/opensearch-artifacts/blob/main/LICENSE) for more information.
-
-## Security, Bugs and feature request
-
-If you find a bug in this rock or want to request a specific feature, here are the useful links:
-
-- Raise the issue or feature request in the [Canonical GitHub repository](https://github.com/canonical/opensearch-artifacts/issues).
-- Meet the community and chat with us if there are issues and feature requests in our [Mattermost Channel](https://chat.charmhub.io/charmhub/channels/data-platform).
-
-## Contributing
-
-Please see the [Juju SDK docs](https://juju.is/docs/sdk) for guidelines on enhancements to this charm following best practice guidelines, and [CONTRIBUTING.md](https://github.com/canonical/mongodb-operator/blob/main/CONTRIBUTING.md) for developer guidance.
+The OpenSearch rock is free software, distributed under the Apache Software
+License, version 2.0. See [LICENSE](../../../LICENSE) and the
+[licenses](licenses) directory, which also contains the upstream OpenSearch
+licence.
 
 ## Trademark notice
 
 OpenSearch is a registered trademark of Amazon Web Services. Other trademarks are property of their respective owners. OpenSearch is not sponsored, endorsed, or affiliated with Amazon Web Services.
-
-## License
-
-The OpenSearch rock, OpenSearch Snap, and OpenSearch Operator are free software, distributed under the [Apache Software License, version 2.0](https://github.com/canonical/opensearch-artifacts/blob/main/LICENSE). They install and operate OpenSearch, which is also licensed under the [Apache Software License, version 2.0](https://github.com/canonical/opensearch-rock/blob/main/licenses/LICENSE-opensearch).
