@@ -19,6 +19,16 @@ platforms:
   arm64:
 
 
+package-repositories:
+  - type: apt
+    components: [main]
+    suites: [noble]
+    key-id: 6676E3F1A76ADBE4488944BF7D1A96D4BF78C79E
+    # URL cannot be wrapped: YAML folding would insert a space into it.
+    # yamllint disable-line rule:line-length
+    url: https://ppa.launchpadcontent.net/data-platform/prometheus-opensearch-dashboards-exporter/ubuntu
+
+
 system-usernames:
   snap_daemon: shared
 
@@ -46,6 +56,7 @@ environment:
   OPS_ROOT: ${SNAP_CURRENT}/opt/opensearch-dashboards
   OPENSEARCH_DASHBOARDS_RO_HOME: ${SNAP_CURRENT}/usr/share/opensearch-dashboards
   OPENSEARCH_DASHBOARDS_BIN: ${OPENSEARCH_DASHBOARDS_RO_HOME}/bin
+  OPENSEARCH_DASHBOARDS_DEPS_BIN: ${SNAP_CURRENT}/usr/bin
   NODE_HOME: ${OPENSEARCH_DASHBOARDS_RO_HOME}/node
   OPENSEARCH_DASHBOARDS_RW_HOME:
     ${SNAP_DATA_CURRENT}/usr/share/opensearch-dashboards
@@ -68,6 +79,18 @@ apps:
       - network
       - network-bind
 
+  exporter-daemon:
+    daemon: simple
+    after:
+      - opensearch-dashboards-daemon
+    install-mode: disable
+    command: opt/opensearch-dashboards/start-exporter.sh
+    restart-condition: always
+    restart-delay: 5s
+    plugs:
+      - network
+      - network-bind
+
 
 parts:
   dependencies:
@@ -76,6 +99,7 @@ parts:
       - util-linux
       - curl
       - yq
+      - prometheus-opensearch-dashboards-exporter
 
   wrapper-scripts:
     plugin: nil

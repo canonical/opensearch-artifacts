@@ -24,7 +24,7 @@ sudo snap install ./opensearch-dashboards_2.19.6_amd64.snap --dangerous --jailmo
 ```
 
 
-## Start opensearch-dashboards
+## Start opensearch-dashboards-charmed
 
 As explained in the
 [README: Starting OpenSearch Dashboards](README.md#starting-opensearch-dashboards)

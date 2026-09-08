@@ -49,11 +49,12 @@ configuration file above is the only place to change settings.
 
 #### Starting up the service:
 
-The daemon is not started at install time. Once the configuration is in place
-(or if the defaults are acceptable), `opensearch-dashboards` can be started by
-executing the following command
+Neither daemon is started at install time. Once the configuration is in place
+(or if the defaults are acceptable), start them with:
+
 ```
-sudo snap start opensearch-dashboards.opensearch-dashboards-daemon
+sudo snap start opensearch-dashboards-charmed.opensearch-dashboards-daemon
+sudo snap start opensearch-dashboards-charmed.exporter-daemon
 ```
 
 ### Testing the OpenSearch Dashboards setup:
@@ -67,6 +68,8 @@ the Dashboard should be able to automatically connect.
 Any other potential connection (or other configuration information) should go into the
 `opensearch_dashboards.yml` file described in
 [Configuration](#configuration) above.
+
+The Prometheus exporter serves metrics on http://localhost:9684/metrics.
 
 Logs are written to:
 
