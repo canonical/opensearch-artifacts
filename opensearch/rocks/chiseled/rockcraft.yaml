@@ -4,7 +4,7 @@ name: opensearch-chiseled # the name of your ROCK
 base: ubuntu@26.04 # the base environment for this ROCK
 license: Apache-2.0
 
-version: '3.7.0' # just for humans. Semantic versioning is recommended
+version: '3.8.0' # just for humans. Semantic versioning is recommended
 
 summary: 'OpenSearch Chiseled ROCK OCI.'
 description: |
