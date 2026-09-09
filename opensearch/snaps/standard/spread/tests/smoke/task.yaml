@@ -1,23 +1,12 @@
 summary: OpenSearch Standard Snap Smoke Test
 
+environment:
+  NODE_NAME: opensearch-node-1
+
 execute: |
-  # Allow the daemon to set sysctl properties at startup
-  snap set opensearch set-sysctl-props=yes
-
-  # Configure the single-node cluster and generate TLS certificates
-  # node-roles must include both cluster_manager and data: a
-  # cluster_manager-only node cannot hold shards, so the
-  # .opendistro_security index would never start.
-  snap run opensearch.setup \
-    --node-name cm0 \
-    --node-roles cluster_manager,data \
-    --tls-init-setup yes \
-    --tls-priv-key-root-pass changeit \
-    --tls-priv-key-admin-pass changeit \
-    --tls-priv-key-node-pass changeit
-
-  # Start the daemon
-  snap start opensearch.daemon
+  # The install hook has already configured the cluster (TLS certificates,
+  # security index, default admin credentials) and started the daemon.
+  # Verify the out-of-the-box experience here.
 
   # Wait for the REST API to be reachable
   retry=0
@@ -31,10 +20,7 @@ execute: |
     sleep 2
   done
 
-  # Initialize the security plugin (creates the .opendistro_security index)
-  snap run opensearch.security-init --tls-priv-key-admin-pass changeit
-
-  # Wait for the security index to be created
+  # The security index must have been initialized by the install hook
   retry=0
   until [ "$(curl -sk -o /dev/null -w '%{http_code}' \
     https://localhost:9200/.opendistro_security -u admin:admin)" = "200" ]; do
@@ -49,7 +35,7 @@ execute: |
 
   # Run the bundled test scripts
   echo "=== test-node-up ==="
-  snap run opensearch.test-node-up --node-name cm0
+  snap run opensearch.test-node-up --node-name "$NODE_NAME"
 
   echo "=== test-cluster-health-green ==="
   snap run opensearch.test-cluster-health-green
@@ -91,5 +77,19 @@ execute: |
     echo "FAIL: Expected at least 10 plugins, got $plugin_count"
     exit 1
   fi
+
+  # The daemon must survive a reboot-like restart with the generated config
+  snap restart opensearch.daemon
+  retry=0
+  until [ "$(curl -sk -o /dev/null -w '%{http_code}' \
+    https://localhost:9200/.opendistro_security -u admin:admin)" = "200" ]; do
+    retry=$((retry + 1))
+    if [ $retry -ge 60 ]; then
+      echo "OpenSearch daemon did not come back after restart"
+      snap logs opensearch.daemon -n=50 || true
+      exit 1
+    fi
+    sleep 2
+  done
 
   echo "All smoke tests passed."

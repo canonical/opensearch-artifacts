@@ -5,11 +5,11 @@ set -eu
 
 usage() {
 cat << EOF
-usage: create-certificate.sh --password password ...
+usage: create-certificate.sh --type root ...
 To be ran / setup once per cluster.
---password        (Required)    Password for encrypting the key
 --type            (Required)    Enum of either: root, admin, node, client
---root-password   (Optional)    Password for encrypting the root key
+--password        (Optional)    Password for encrypting the key. If unset, the key is generated unencrypted.
+--root-password   (Optional)    Passphrase of the root key when signing, defaults to --password
 --name            (Optional)    Name of certificate: required for nodes and clients
 --subject         (Optional)    Subject for the certificate, defaults to CN=localhost
 --target-dir      (Optional)    The target directory where the certificates and related resources are created
@@ -105,13 +105,6 @@ function set_defaults () {
 
 function validate_args () {
     err_message=""
-#    if [ -z "${password}" ]; then
-#        err_message=" - '--password' is required \n"
-#    fi
-
-    if [ -z "${root_password}" ] && [ "${type}" != "root" ]; then
-        err_message="${err_message}- '--root-password' must be set.\n"
-    fi
 
     if ! echo "${ALLOWED_CERT_TYPES[*]}" | grep -wq "${type}"; then
         err_message="${err_message}- '--type' must be set to one of: ${ALLOWED_CERT_TYPES[*]}.\n"
@@ -139,19 +132,28 @@ function validate_args () {
 # Certs creation
 function create_root_certificate () {
     # generate a private key
-    openssl genrsa \
-        -out "${target_dir}/root-ca-key.pem" \
-        -aes256 \
-        -passout pass:"${password}" \
-        ${KEY_SIZE_BITS}
+    if [ -n "${password}" ]; then
+        openssl genrsa \
+            -out "${target_dir}/root-ca-key.pem" \
+            -aes256 \
+            -passout pass:"${password}" \
+            ${KEY_SIZE_BITS}
+    else
+        openssl genrsa \
+            -out "${target_dir}/root-ca-key.pem" \
+            ${KEY_SIZE_BITS}
+    fi
 
     # generate a root certificate
+    local passin_args=()
+    if [ -n "${password}" ]; then
+        passin_args=(-passin pass:"${password}")
+    fi
     openssl req \
         -new \
         -x509 \
         -sha256 \
-        -passin pass:"${password}" \
-        -passout pass:"${password}" \
+        "${passin_args[@]}" \
         -key "${target_dir}/root-ca-key.pem" \
         -out "${target_dir}/root-ca.pem" \
         -subj "${subject}" \
@@ -161,28 +163,46 @@ function create_root_certificate () {
 
 function create_certificate () {
     # generate a private key certificate
-    openssl genrsa \
-        -out "${target_dir}/${res_name}-key-temp.pem" \
-        -aes256 \
-        -passout pass:"${password}" \
-        ${KEY_SIZE_BITS}
+    if [ -n "${password}" ]; then
+        openssl genrsa \
+            -out "${target_dir}/${res_name}-key-temp.pem" \
+            -aes256 \
+            -passout pass:"${password}" \
+            ${KEY_SIZE_BITS}
+    else
+        openssl genrsa \
+            -out "${target_dir}/${res_name}-key-temp.pem" \
+            ${KEY_SIZE_BITS}
+    fi
 
-    # convert created key to PKS-8 Java compatible format
-    openssl pkcs8 \
-        -inform PEM \
-        -outform PEM \
-        -in "${target_dir}/${res_name}-key-temp.pem" \
-        -topk8 \
-        -v1 PBE-SHA1-3DES \
-        -passout pass:"${password}" \
-        -passin pass:"${password}" \
-        -out "${target_dir}/${res_name}-key.pem"
+    # convert created key to PKS-8 Java compatible format, encrypted
+    # only when a password is provided
+    local pkcs8_args=(
+        "-inform" "PEM"
+        "-outform" "PEM"
+        "-in" "${target_dir}/${res_name}-key-temp.pem"
+        "-topk8"
+    )
+    if [ -n "${password}" ]; then
+        pkcs8_args+=(
+            "-v1" "PBE-SHA1-3DES"
+            "-passout" "pass:${password}"
+            "-passin" "pass:${password}"
+        )
+    else
+        pkcs8_args+=("-nocrypt")
+    fi
+    pkcs8_args+=("-out" "${target_dir}/${res_name}-key.pem")
+    openssl pkcs8 "${pkcs8_args[@]}"
 
     # create a CSR
+    local passin_args=()
+    if [ -n "${password}" ]; then
+        passin_args=(-passin pass:"${password}")
+    fi
     openssl req \
         -new \
-        -passout pass:"${password}" \
-        -passin pass:"${password}" \
+        "${passin_args[@]}" \
         -key "${target_dir}/${res_name}-key.pem" \
         -subj "${subject}" \
         -out "${target_dir}/${res_name}.csr"
@@ -196,10 +216,13 @@ function create_certificate () {
         "-CAkey" "${target_dir}/root-ca-key.pem"
         "-CAcreateserial"
         "-sha256"
-        "-passin" "pass:${root_password}"
         "-out" "${target_dir}/${res_name}.pem"
         "-days" "${LIFESPAN_DAYS}"
     )
+
+    if [ -n "${root_password}" ]; then
+        gen_cert_args+=("-passin" "pass:${root_password}")
+    fi
 
     if [ "${type}" == "node" ] || [ "${type}" == "client" ]; then
         CN="${subject##*'CN='}"

@@ -2,16 +2,16 @@
 
 set -eu
 
-
+source "${OPS_ROOT}"/helpers/snap-logger.sh "self-managed-init"
 source "${OPS_ROOT}"/helpers/set-conf.sh
 
 
 usage() {
 cat << EOF
-usage: init.sh --root-password password ...
+usage: self-managed-init.sh --target-dir dir ...
 To be ran / setup once per cluster.
---root-password   (Required)    Password for encrypting the root key
---admin-password  (Optional)    Password for encrypting the admin key
+--root-password   (Optional)    Password for encrypting the root key. If unset, the keys are generated unencrypted.
+--admin-password  (Optional)    Password for encrypting the admin key. If unset, the key is generated unencrypted.
 --root-subject    (Optional)    Subject for the root certificate, defaults to [..../CN=localhost]
 --admin-subject   (Optional)    Subject for the admin certificate
 --rest-with-tls   (Optional)    Enum of either: yes (default), no. Enables the certificate for both the transport and rest layers or just the former
@@ -79,21 +79,7 @@ function parse_args () {
 }
 
 
-function validate_args () {
-    err_message=""
-    if [ -z "${root_password}" ]; then
-        err_message="- '--root-password' is required \n"
-    fi
-
-    if [ -n "${err_message}" ]; then
-        echo -e "The following errors occurred: \n${err_message}Refer to the help menu."
-        exit 1
-    fi
-}
-
-
 parse_args "$@"
-validate_args
 
 
 # create the root cert
@@ -131,8 +117,7 @@ inverted_admin_subject=$(
         -subject \
         -nameopt RFC2253 \
         -noout \
-        -in "${target_dir}/admin.pem" \
-        -passin pass:"${admin_password}"
+        -in "${target_dir}/admin.pem"
 )
 inverted_admin_subject="${inverted_admin_subject##subject=}"
 set_yaml_prop "${opensearch_yaml}" "plugins.security.authcz.admin_dn" "[ \"${inverted_admin_subject}\" ]" "no" "no"

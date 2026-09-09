@@ -3,9 +3,9 @@
 set -eux
 
 
-source "${OPS_ROOT}"/helpers/snap-logger.sh "hook-install"
 source "${OPS_ROOT}"/helpers/io.sh
 source "${OPS_ROOT}"/helpers/set-conf.sh
+source "${OPS_ROOT}"/sys/set-sys-config.sh
 
 
 function create_file_structure () {
@@ -69,7 +69,62 @@ function create_editable_cacerts_trust_store() {
     echo "-Djavax.net.ssl.trustStorePassword=changeit" | tee -a "${OPENSEARCH_PATH_CONF}/jvm.options"
 }
 
+function bootstrap_cluster () {
+    # Defaults for a ready-to-use single-node cluster. Administrators can
+    # reconfigure at any time post-installation via 'opensearch.setup'.
+    local cluster_name="opensearch-cluster"
+    local node_name="opensearch-$(openssl rand -hex 4)"
+    local node_roles="[ cluster_manager, data ]"
+    local node_host="[_local_, _site_]"
+    local seed_hosts="[ \"127.0.0.1\", \"[::1]\" ]"
 
+    local opensearch_yaml="${OPENSEARCH_PATH_CONF}/opensearch.yml"
+    set_yaml_prop "${opensearch_yaml}" "cluster.name" "${cluster_name}"
+    set_yaml_prop "${opensearch_yaml}" "node.name" "${node_name}"
+    set_yaml_prop "${opensearch_yaml}" "node.roles" "${node_roles}"
+    set_yaml_prop "${opensearch_yaml}" "network.host" "${node_host}"
+    set_yaml_prop "${opensearch_yaml}" "discovery.seed_hosts" "${seed_hosts}"
+    set_yaml_prop "${opensearch_yaml}" "cluster.initial_cluster_manager_nodes" "[ ${node_name} ]"
+    set_yaml_prop "${opensearch_yaml}" "plugins.security.disabled" "false"
+
+    # Generate self-signed TLS material: root, admin and node certificates
+    # with unencrypted keys, wired into opensearch.yml for both the
+    # transport and rest layers.
+    local TLS_DIR="${OPS_ROOT}/security/tls"
+    source \
+        "${TLS_DIR}"/self-managed-init.sh \
+            --root-password "" \
+            --admin-password "" \
+            --root-subject "" \
+            --admin-subject "" \
+            --rest-with-tls "yes" \
+            --target-dir "${OPENSEARCH_PATH_CERTS}"
+
+    source \
+        "${TLS_DIR}"/self-managed-node.sh \
+            --name "${node_name}" \
+            --root-password "" \
+            --node-password "" \
+            --node-subject "" \
+            --rest-with-tls "yes" \
+            --target-dir "${OPENSEARCH_PATH_CERTS}"
+
+    keys=("root-ca" "root-ca-key" "admin" "admin-key" "node-${node_name}" "node-${node_name}-key")
+    for key in "${keys[@]}"; do
+        set_access_restrictions "${OPENSEARCH_PATH_CERTS}/${key}.pem" 664
+    done
+
+    # Let the security plugin create the .opendistro_security index from
+    # the shipped configuration files on first boot.
+    set_yaml_prop \
+        "${opensearch_yaml}" \
+        "plugins.security.allow_default_init_securityindex" "true"
+}
+
+warn_if_missing_perm "mount-observe"
+
+# Add logger after the permission check
+source "${OPS_ROOT}"/helpers/snap-logger.sh "hook-install"
 create_file_structure
 set_base_config_props
 create_editable_cacerts_trust_store
@@ -80,3 +135,5 @@ for f in "${folders[@]}"; do
     chown -R snap_daemon "${f}/"*
     chgrp -R root "${f}/"*
 done
+
+bootstrap_cluster

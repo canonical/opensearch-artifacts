@@ -1,0 +1,101 @@
+summary: OpenSearch Standard Snap Reconfiguration Test
+
+environment:
+  NODE_NAME: cm0
+
+execute: |
+  # The install hook bootstrapped a cluster with self-generated
+  # certificates. Wait for it to be up, then re-configure it with custom
+  # TLS material, as documented in the README.
+
+  wait_for_api () {
+    local retry=0
+    until curl -sk https://localhost:9200 >/dev/null 2>&1; do
+      retry=$((retry + 1))
+      if [ $retry -ge 60 ]; then
+        echo "OpenSearch daemon did not become ready in time"
+        snap logs opensearch.daemon -n=50 || true
+        exit 1
+      fi
+      sleep 2
+    done
+  }
+
+  wait_for_security_index () {
+    local retry=0
+    until [ "$(curl -sk -o /dev/null -w '%{http_code}' \
+      https://localhost:9200/.opendistro_security -u admin:admin)" = "200" ]; do
+      retry=$((retry + 1))
+      if [ $retry -ge 60 ]; then
+        echo "Security index was not ready in time"
+        snap logs opensearch.daemon -n=50 || true
+        exit 1
+      fi
+      sleep 2
+    done
+  }
+
+  wait_for_api
+  wait_for_security_index
+
+  # The auto-generated certificates must be replaceable: re-run setup with
+  # custom certificates (the generated keys are unencrypted).
+  snap run opensearch.setup \
+    --node-name "$NODE_NAME" \
+    --node-roles cluster_manager,data \
+    --tls-init-setup yes
+
+  snap restart opensearch.daemon
+  wait_for_api
+
+  # Re-initialize the security index with the new admin certificate
+  snap run opensearch.security-init
+
+  # The node must run under the new name and stay healthy
+  snap run opensearch.test-node-up --node-name "$NODE_NAME"
+  snap run opensearch.test-cluster-health-green
+  snap run opensearch.test-security-index-created
+
+  # The node certificate allowlist must contain exactly one DN (no stale
+  # entries from the auto-generated certificate of the first setup run).
+  nodes_dn=$(grep -A3 "nodes_dn" \
+    /var/snap/opensearch/current/etc/opensearch/opensearch.yml)
+  echo "nodes_dn config: ${nodes_dn}"
+  if [ "$(echo "$nodes_dn" | grep -o "CN=" | wc -l)" -ne 1 ]; then
+    echo "FAIL: nodes_dn must contain exactly one DN after reconfiguration"
+    exit 1
+  fi
+
+  # Users must also be able to opt into encrypted private keys
+  snap run opensearch.setup \
+    --node-name "$NODE_NAME" \
+    --node-roles cluster_manager,data \
+    --tls-priv-key-root-pass root1234 \
+    --tls-priv-key-admin-pass admin1234 \
+    --tls-priv-key-node-pass node1234 \
+    --tls-init-setup yes
+
+  certs_dir=/var/snap/opensearch/current/etc/opensearch/certificates
+  encrypted_keys=(
+    "$certs_dir"/root-ca-key.pem
+    "$certs_dir"/admin-key.pem
+    "$certs_dir"/node-"$NODE_NAME"-key.pem
+  )
+  for key in "${encrypted_keys[@]}"; do
+    if ! grep -q "ENCRYPTED" "$key"; then
+      echo "FAIL: ${key} should be encrypted"
+      exit 1
+    fi
+  done
+
+  snap restart opensearch.daemon
+  wait_for_api
+
+  # security-init must accept the admin key passphrase for encrypted keys
+  snap run opensearch.security-init --tls-priv-key-admin-pass admin1234
+
+  snap run opensearch.test-node-up --node-name "$NODE_NAME"
+  snap run opensearch.test-cluster-health-green
+  snap run opensearch.test-security-index-created
+
+  echo "All reconfiguration tests passed."

@@ -93,7 +93,7 @@ environment:
 apps:
   daemon:
     daemon: simple
-    install-mode: disable
+    install-mode: enable
     command: opt/opensearch/start.sh
     restart-condition: always
     restart-delay: 20s
@@ -233,6 +233,27 @@ apps:
     environment:
       bin_script: opensearch-performance-analyzer/performance-analyzer-agent-cli
 
+  plugins-security-securityadmin:
+    command: opt/opensearch/plugins-wrapper.sh
+    plugs:
+      - network
+      - network-bind
+    environment:
+      plugin_tool: opensearch-security/tools/securityadmin.sh
+
+  plugins-security-hash:
+    command: opt/opensearch/plugins-wrapper.sh
+    environment:
+      plugin_tool: opensearch-security/tools/hash.sh
+
+  plugins-security-audit-config-migrater:
+    command: opt/opensearch/plugins-wrapper.sh
+    plugs:
+      - network
+      - network-bind
+    environment:
+      plugin_tool: opensearch-security/tools/audit_config_migrater.sh
+
   keytool:
     command: opt/opensearch/keytool-wrapper.sh
     plugs:
@@ -279,6 +300,9 @@ parts:
   opensearch:
     plugin: nil
     after: [wrapper-scripts]
+    build-environment:
+      # LXD bridge host IP, reachable from build containers
+      - OPS_TARBALL_CACHE_URL: http://10.35.197.1:8000
     build-packages:
       - ca-certificates
       - ca-certificates-java
@@ -314,9 +338,10 @@ parts:
 
       # Use local HTTP cache if available to avoid re-downloading the large tarball
       cache_url="${OPS_TARBALL_CACHE_URL:-}"
-      if [ -n "${cache_url}" ]; then
-        curl -skL "${cache_url}/${archive}" -o "${archive}"
+      if [ -n "${cache_url}" ] && curl -sf --max-time 5 -o "${archive}" "${cache_url}/${archive}"; then
+        echo "Using cached tarball from ${cache_url}/${archive}"
       else
+        echo "Downloading tarball from Launchpad..."
         curl -sk "${url}" \
           | jq -r '.entries[].file_link' \
           | sort \
@@ -329,6 +354,10 @@ parts:
 
       mkdir -p "${CRAFT_PART_INSTALL}/etc/opensearch/"
       mv "${CRAFT_PART_INSTALL}"/config/* "${CRAFT_PART_INSTALL}/etc/opensearch/"
+
+      mkdir -p "${CRAFT_PART_INSTALL}/etc/opensearch/opensearch-performance-analyzer"
+      cp "${CRAFT_PROJECT_DIR}/snap/local/opensearch-performance-analyzer/"* \
+        "${CRAFT_PART_INSTALL}/etc/opensearch/opensearch-performance-analyzer/"
 
       declare -a resources=(
           bin lib modules plugins agent manifest.yml NOTICE.txt LICENSE.txt README.md
@@ -353,7 +382,8 @@ parts:
       for plugin in "${plugins_to_remove[@]}"; do
           echo "Attempting to remove: ${plugin}"
           # Execute the official removal tool.
-          "${CRAFT_PART_INSTALL}/usr/share/opensearch/bin/opensearch-plugin" remove "${plugin}"
+          # --purge to remove config files and data associated with the plugin.
+          "${CRAFT_PART_INSTALL}/usr/share/opensearch/bin/opensearch-plugin" remove "${plugin}" --purge
       done
       ls "${CRAFT_PART_INSTALL}/usr/share/opensearch/plugins"
 
