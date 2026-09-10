@@ -54,7 +54,7 @@ Neither daemon is started at install time. Once the configuration is in place
 
 ```
 sudo snap start opensearch-dashboards.opensearch-dashboards-daemon
-sudo snap start opensearch-dashboards-charmed.exporter-daemon
+sudo snap start opensearch-dashboards.exporter-daemon
 ```
 
 ### Testing the OpenSearch Dashboards setup:
