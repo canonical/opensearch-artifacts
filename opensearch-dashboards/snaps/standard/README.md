@@ -53,7 +53,7 @@ Neither daemon is started at install time. Once the configuration is in place
 (or if the defaults are acceptable), start them with:
 
 ```
-sudo snap start opensearch-dashboards-charmed.opensearch-dashboards-daemon
+sudo snap start opensearch-dashboards.opensearch-dashboards-daemon
 sudo snap start opensearch-dashboards-charmed.exporter-daemon
 ```
 
