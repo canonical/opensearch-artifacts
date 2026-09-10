@@ -12,8 +12,6 @@
 
 This is the snap package for [OpenSearch Dashboards](https://opensearch.org/docs/latest/dashboards/), a community-driven, Apache 2.0-licensed user interface that lets you visualize your OpenSearch data, together with running and scaling your OpenSearch clusters.
 
-If you need the bundled Prometheus exporter, use the
-[charmed snap](../charmed) instead.
 
 ### Installation:
 [![Get it from the Snap Store](https://snapcraft.io/static/images/badges/en/snap-store-black.svg)](https://snapcraft.io/opensearch-dashboards)
@@ -44,16 +42,14 @@ Edit that file before starting the service. The commonly changed keys are:
  - `opensearch.username` / `opensearch.password` -- credentials used to
    authenticate against OpenSearch (default: `kibanaserver` / `kibanaserver`)
 
-This snap exposes no snap options, so `snap set` has no effect on it: the
-configuration file above is the only place to change settings.
-
 #### Starting up the service:
 
-The daemon is not started at install time. Once the configuration is in place
-(or if the defaults are acceptable), `opensearch-dashboards` can be started by
-executing the following command
+Neither daemon is started at install time. Once the configuration is in place
+(or if the defaults are acceptable), start them with:
+
 ```
 sudo snap start opensearch-dashboards.opensearch-dashboards-daemon
+sudo snap start opensearch-dashboards.exporter-daemon
 ```
 
 ### Testing the OpenSearch Dashboards setup:
@@ -67,6 +63,8 @@ the Dashboard should be able to automatically connect.
 Any other potential connection (or other configuration information) should go into the
 `opensearch_dashboards.yml` file described in
 [Configuration](#configuration) above.
+
+The Prometheus exporter serves metrics on http://localhost:9684/metrics.
 
 Logs are written to:
 

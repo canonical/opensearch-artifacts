@@ -47,7 +47,7 @@ parts:
   opensearch-dashboards-snap:
     plugin: nil
     stage-snaps:
-      - opensearch-dashboards-charmed/2/edge
+      - opensearch-dashboards/2/edge
     stage:
       # The rock ships its own entrypoint scripts under /usr/bin, so the
       # snap wrappers (which rely on snap-only env vars and snapctl) are
@@ -69,16 +69,13 @@ parts:
       rocks=usr/share/rocks/
       mkdir -p ${rocks}
 
-      ## for deb packages
-      # Format string is split only to stay within the line length limit; the
-      # single quotes keep the ${...} fields literal for dpkg-query to expand.
       query_format='${db:Status-Abbrev},${binary:Package},${Version}'
       query_format+=',${source:Package},${Source:Version}\n'
       dpkg-query -f "${query_format}" -W > ${rocks}/dpkg.query
 
       ## for snap packages
-      cp snap.opensearch-dashboards-charmed/manifest.yaml ${rocks}
-      cp snap.opensearch-dashboards-charmed/snapcraft.yaml ${rocks}
+      cp snap.opensearch-dashboards/manifest.yaml ${rocks}
+      cp snap.opensearch-dashboards/snapcraft.yaml ${rocks}
 
   non-root-user:
     plugin: nil
