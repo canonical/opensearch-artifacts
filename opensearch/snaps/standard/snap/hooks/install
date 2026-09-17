@@ -14,6 +14,8 @@ function create_file_structure () {
     # Doing it before OPENSEARCH_PATH_CERTS is created, as it is set as "snap_daemon" user
     mkdir -p "${OPENSEARCH_PATH_CONF}/"
     copy_files_between_folder "${SNAP}/etc/opensearch/" "${OPENSEARCH_PATH_CONF}/"
+    chown snap_daemon "${OPENSEARCH_PATH_CONF}"
+    chgrp snap_daemon "${OPENSEARCH_PATH_CONF}"
 
     # The upstream opensearch.yml template is all comments (no YAML data).
     # python yq silently truncates such files. Prepend a YAML document
@@ -22,21 +24,29 @@ function create_file_structure () {
         sed -i "1i ---" "${OPENSEARCH_PATH_CONF}/opensearch.yml"
     fi
 
-    declare -a folders=("${OPENSEARCH_HOME}" "${OPENSEARCH_VARLIB}" "${OPENSEARCH_VARLOG}" "${OPENSEARCH_TMPDIR}" "${OPENSEARCH_PATH_CERTS}" "${HOME}")
+    declare -a folders=("${OPENSEARCH_VARLIB}" "${OPENSEARCH_VARLOG}" "${OPENSEARCH_TMPDIR}" "${OPENSEARCH_PATH_CERTS}" "${HOME}")
     for f in "${folders[@]}"; do
         if [ ! -d "${f}" ]; then
             add_folder "${f}" 770
         fi
     done
 
-    declare -a common=(modules plugins lib)
-    for dir in "${common[@]}"; do
-        add_folder "${SNAP_DATA}/usr/share/opensearch/${dir}" 770
-        cp -r "${SNAP}/usr/share/opensearch/${dir}/"* "${SNAP_DATA}/usr/share/opensearch/${dir}/"
+    local data_home="${SNAP_DATA}/usr/share/opensearch"
+    local plugins_dir="${data_home}/plugins"
+    add_folder "${data_home}" 770
+    add_folder "${plugins_dir}" 770
+    local plugin
+    local name
+    for plugin in "${SNAP}"/usr/share/opensearch/lib/shipped-plugins/*/; do
+        [ -d "${plugin}" ] || continue
+        name="$(basename "${plugin}")"
+        ln -s \
+            "${SNAP_CURRENT}/usr/share/opensearch/lib/shipped-plugins/${name}" \
+            "${plugins_dir}/"
     done
 
-    add_folder "${OPENSEARCH_HOME}/extensions" 770
-    add_file "${OPENSEARCH_HOME}/extensions/extensions.yml" 660
+    add_folder "${OPENSEARCH_EXTENSIONS}" 770
+    add_file "${OPENSEARCH_EXTENSIONS}/extensions.yml" 660
     add_file "${OPENSEARCH_PATH_CONF}/unicast_hosts.txt" 660
     [ -d "/dev/shm/performanceanalyzer" ] || add_folder "/dev/shm/performanceanalyzer" 770
 }
@@ -58,14 +68,14 @@ function create_editable_cacerts_trust_store() {
     "${JAVA_HOME}"/bin/keytool \
         -importkeystore                                     \
         -srckeystore  "${SNAP}/etc/ssl/certs/java/cacerts"  \
-        -destkeystore "${SNAP_DATA}"/etc/opensearch/certificates/cacerts.p12 \
+        -destkeystore "${OPENSEARCH_PATH_CERTS}/cacerts.p12" \
         -srcstoretype   JKS              \
         -deststoretype  PKCS12           \
         -srcstorepass   changeit         \
         -deststorepass  changeit         \
         -noprompt
 
-    echo "-Djavax.net.ssl.trustStore=${SNAP_DATA_CURRENT}/etc/opensearch/certificates/cacerts.p12" | tee -a "${OPENSEARCH_PATH_CONF}/jvm.options"
+    echo "-Djavax.net.ssl.trustStore=${OPENSEARCH_PATH_CERTS}/cacerts.p12" | tee -a "${OPENSEARCH_PATH_CONF}/jvm.options"
     echo "-Djavax.net.ssl.trustStorePassword=changeit" | tee -a "${OPENSEARCH_PATH_CONF}/jvm.options"
 }
 
@@ -73,7 +83,7 @@ function bootstrap_cluster () {
     # Defaults for a ready-to-use single-node cluster. Administrators can
     # reconfigure at any time post-installation via 'opensearch.setup'.
     local cluster_name="opensearch-cluster"
-    local node_name="opensearch-$(openssl rand -hex 4)"
+    local node_name="opensearch-$(hostname)"
     local node_roles="[ cluster_manager, data ]"
     local node_host="[_local_, _site_]"
     local seed_hosts="[ \"127.0.0.1\", \"[::1]\" ]"
@@ -129,11 +139,14 @@ create_file_structure
 set_base_config_props
 create_editable_cacerts_trust_store
 
-#  "${SNAP_COMMON}"
-declare -a folders=("${SNAP_DATA}")
+declare -a folders=("${OPENSEARCH_PATH_CONF}" "${SNAP_DATA}/usr/share/opensearch")
 for f in "${folders[@]}"; do
     chown -R snap_daemon "${f}/"*
-    chgrp -R root "${f}/"*
+    chgrp -R snap_daemon "${f}/"*
 done
+
+ln -s \
+    "${SNAP_CURRENT}/usr/share/opensearch/lib" \
+    "${SNAP_DATA}/usr/share/opensearch/lib"
 
 bootstrap_cluster
