@@ -381,10 +381,8 @@ parts:
       done
       ls "${CRAFT_PART_INSTALL}/usr/share/opensearch/plugins"
 
-      shipped="${CRAFT_PART_INSTALL}/usr/share/opensearch/lib/shipped-plugins"
+      shipped="${CRAFT_PART_INSTALL}/usr/share/opensearch/shipped-plugins"
       mv "${CRAFT_PART_INSTALL}/usr/share/opensearch/plugins" "${shipped}"
-
-      ln -s . "${CRAFT_PART_INSTALL}/usr/share/opensearch/lib/lib"
 
       # Final clean-up
       rm "${archive}"
@@ -405,7 +403,6 @@ parts:
       cp "${CRAFT_STAGE}/opt/opensearch/plugin-wrapper.sh" "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-plugin"
       cp "${CRAFT_STAGE}/opt/opensearch/keystore-wrapper.sh" "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-keystore"
 
-      rm -rf "${CRAFT_PRIME}/usr/share/opensearch/plugins" "${CRAFT_PRIME}/usr/share/opensearch/extensions"
       ln -s /var/snap/opensearch/current/usr/share/opensearch/plugins "${CRAFT_PRIME}/usr/share/opensearch/plugins"
       ln -s /var/snap/opensearch/common/usr/share/opensearch/extensions "${CRAFT_PRIME}/usr/share/opensearch/extensions"
     # yamllint enable rule:line-length

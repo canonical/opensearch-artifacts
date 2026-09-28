@@ -78,7 +78,6 @@ function init_security_plugin () {
 
 parse_args "$@"
 
-# TODO: 
 # give it some time to bootstrap in case the commands were chained
 # replace later with a request to the opensearch rest api
 # and test on "OpenSearch Security not initialized." output

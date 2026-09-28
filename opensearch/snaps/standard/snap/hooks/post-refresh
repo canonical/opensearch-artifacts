@@ -16,7 +16,7 @@ function as_snap_daemon () {
 
 
 function ensure_plugins_dir () {
-    local shipped="${SNAP}/usr/share/opensearch/lib/shipped-plugins"
+    local shipped="${SNAP}/usr/share/opensearch/shipped-plugins"
     local new_version name plugin descriptor version
 
     new_version="$(sed -n "s/^version:[[:space:]]*//p" "${SNAP}/meta/snap.yaml" | tr -d "'\"")"
@@ -52,7 +52,7 @@ function ensure_plugins_dir () {
         name="$(basename "${plugin}")"
         if [ ! -L "${OPENSEARCH_PLUGINS}/${name}" ]; then
             as_snap_daemon ln -s \
-                "${SNAP_CURRENT}/usr/share/opensearch/lib/shipped-plugins/${name}" \
+                "${SNAP_CURRENT}/usr/share/opensearch/shipped-plugins/${name}" \
                 "${OPENSEARCH_PLUGINS}/${name}"
         fi
     done

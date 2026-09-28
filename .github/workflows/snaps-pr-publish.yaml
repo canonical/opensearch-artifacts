@@ -40,11 +40,10 @@ jobs:
           sudo iptables -P FORWARD ACCEPT
           sudo snap install snapcraft --classic
       
-      # TODO: FIx thix
-      - name: snapcraft build 
+      - name: snapcraft test
         id: test
         working-directory: ${{ matrix.snap.path }}
-        run: sudo --user "$USER" --preserve-env --preserve-env=PATH -- env -- CI=1 SNAPCRAFT_BUILD_INFO=1 snapcraft pack
+        run: sudo --user "$USER" --preserve-env --preserve-env=PATH -- env -- CI=1 SNAPCRAFT_BUILD_INFO=1 snapcraft test
 
       - name: Snapcraft logs
         if: ${{ success() || (failure() && steps.test.outcome == 'failure') }}
