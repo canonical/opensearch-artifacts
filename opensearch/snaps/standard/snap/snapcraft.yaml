@@ -210,30 +210,6 @@ apps:
     environment:
       bin_script: opensearch-shard
 
-  upgrade:
-    command: opt/opensearch/bin-wrapper.sh
-    plugs:
-      - network
-      - network-bind
-    environment:
-      bin_script: opensearch-upgrade
-
-  performance-analyzer-agent:
-    command: opt/opensearch/bin-wrapper.sh
-    plugs:
-      - network
-      - network-bind
-    environment:
-      bin_script: opensearch-performance-analyzer/performance-analyzer-agent
-
-  performance-analyzer-agent-cli:
-    command: opt/opensearch/bin-wrapper.sh
-    plugs:
-      - network
-      - network-bind
-    environment:
-      bin_script: opensearch-performance-analyzer/performance-analyzer-agent-cli
-
   plugins-security-securityadmin:
     command: opt/opensearch/plugins-wrapper.sh
     plugs:
