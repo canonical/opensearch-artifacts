@@ -85,6 +85,13 @@ parts:
       mv "${CRAFT_PRIME}/etc/opensearch" \
           "${CRAFT_PRIME}/usr/share/opensearch/config"
 
+      # Use plugins from the snap shipped-plugins folder
+      rm -f "${CRAFT_PRIME}/usr/share/opensearch/plugins" \
+            "${CRAFT_PRIME}/usr/share/opensearch/extensions"
+      mv "${CRAFT_PRIME}/usr/share/opensearch/shipped-plugins" \
+          "${CRAFT_PRIME}/usr/share/opensearch/plugins"
+      mkdir -p "${CRAFT_PRIME}/usr/share/opensearch/extensions"
+
       # enable security monitoring
       rocks=usr/share/rocks/
       mkdir -p ${rocks}
