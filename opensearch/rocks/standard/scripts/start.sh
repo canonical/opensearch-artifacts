@@ -69,6 +69,17 @@ function seed_hosts() {
 }
 
 
+export OPENSEARCH_JAVA_OPTS="-Dopensearch.cgroups.hierarchy.override=/ ${OPENSEARCH_JAVA_OPTS:-}"
+
+opensearch_opts=()
+while IFS='=' read -r envvar_key envvar_value; do
+    if [[ "${envvar_key}" =~ ^[a-z0-9_]+\.[a-z0-9_]+ || "${envvar_key}" == "processors" ]]; then
+        if [ -n "${envvar_value}" ]; then
+            opensearch_opts+=("-E${envvar_key}=${envvar_value}")
+        fi
+    fi
+done < <(env)
+
 conf="${OPENSEARCH_PATH_CONF}/opensearch.yml"
 
 set_yaml_prop "${conf}" "cluster.name" "${CLUSTER_NAME}"
@@ -81,12 +92,12 @@ fi
 
 set_yaml_prop "${conf}" "network.host" "$(network_host)"
 set_yaml_prop "${conf}" "discovery.seed_hosts" "$(seed_hosts)"
-set_yaml_prop "${conf}" "path.data" "${OPENSEARCH_VARLIB}/data"
-set_yaml_prop "${conf}" "path.logs" "${OPENSEARCH_VARLOG}/logs"
+set_yaml_prop "${conf}" "path.data" "${OPENSEARCH_PATH_DATA}"
+set_yaml_prop "${conf}" "path.logs" "${OPENSEARCH_PATH_LOGS}"
 set_yaml_prop "${conf}" "plugins.security.disabled" "true"
-sed -i "s@=logs/@=${OPENSEARCH_VARLOG}/@" "${OPENSEARCH_PATH_CONF}/jvm.options"
+sed -i "s@=logs/@=${OPENSEARCH_PATH_LOGS}/@" "${OPENSEARCH_PATH_CONF}/jvm.options"
 sed -i "s@-javaagent:agent/@-javaagent:${OPENSEARCH_HOME}/agent/@" "${OPENSEARCH_PATH_CONF}/jvm.options"
 
 cat "${conf}"
 
-exec "${OPENSEARCH_BIN}"/opensearch
+exec "${OPENSEARCH_BIN}"/opensearch "${opensearch_opts[@]}"
