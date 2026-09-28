@@ -67,6 +67,10 @@ function start_opensearch () {
 
     configure_qat
 
+    # Grant read access to the shipped plugins through their real path,
+    # which changes with every snap revision.
+    export OPENSEARCH_JAVA_OPTS="${OPENSEARCH_JAVA_OPTS:-} -Dsnap.path=${SNAP} -Djava.security.policy=${OPS_ROOT}/security/shipped-plugins.policy"
+
     "${SNAP}"/usr/bin/setpriv \
         --clear-groups \
         --reuid snap_daemon \
