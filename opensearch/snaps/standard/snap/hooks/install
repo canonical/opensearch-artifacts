@@ -15,7 +15,7 @@ function create_file_structure () {
     mkdir -p "${OPENSEARCH_PATH_CONF}/"
     copy_files_between_folder "${SNAP}/etc/opensearch/" "${OPENSEARCH_PATH_CONF}/"
     chown snap_daemon "${OPENSEARCH_PATH_CONF}"
-    chgrp snap_daemon "${OPENSEARCH_PATH_CONF}"
+    chgrp root "${OPENSEARCH_PATH_CONF}"
 
     # The upstream opensearch.yml template is all comments (no YAML data).
     # python yq silently truncates such files. Prepend a YAML document
@@ -37,11 +37,11 @@ function create_file_structure () {
     add_folder "${plugins_dir}" 770
     local plugin
     local name
-    for plugin in "${SNAP}"/usr/share/opensearch/lib/shipped-plugins/*/; do
+    for plugin in "${SNAP}"/usr/share/opensearch/shipped-plugins/*/; do
         [ -d "${plugin}" ] || continue
         name="$(basename "${plugin}")"
         ln -s \
-            "${SNAP_CURRENT}/usr/share/opensearch/lib/shipped-plugins/${name}" \
+            "${SNAP_CURRENT}/usr/share/opensearch/shipped-plugins/${name}" \
             "${plugins_dir}/"
     done
 
@@ -80,8 +80,7 @@ function create_editable_cacerts_trust_store() {
 }
 
 function bootstrap_cluster () {
-    # Defaults for a ready-to-use single-node cluster. Administrators can
-    # reconfigure at any time post-installation via 'opensearch.setup'.
+    # Defaults for a ready-to-use single-node cluster.
     local cluster_name="opensearch-cluster"
     local node_name="opensearch-$(hostname)"
     local node_roles="[ cluster_manager, data ]"
@@ -97,9 +96,6 @@ function bootstrap_cluster () {
     set_yaml_prop "${opensearch_yaml}" "cluster.initial_cluster_manager_nodes" "[ ${node_name} ]"
     set_yaml_prop "${opensearch_yaml}" "plugins.security.disabled" "false"
 
-    # Generate self-signed TLS material: root, admin and node certificates
-    # with unencrypted keys, wired into opensearch.yml for both the
-    # transport and rest layers.
     local TLS_DIR="${OPS_ROOT}/security/tls"
     source \
         "${TLS_DIR}"/self-managed-init.sh \
@@ -124,14 +120,12 @@ function bootstrap_cluster () {
         set_access_restrictions "${OPENSEARCH_PATH_CERTS}/${key}.pem" 664
     done
 
-    # Let the security plugin create the .opendistro_security index from
-    # the shipped configuration files on first boot.
+    # Let the security plugin create the .opendistro_security index 
     set_yaml_prop \
         "${opensearch_yaml}" \
         "plugins.security.allow_default_init_securityindex" "true"
 }
 
-warn_if_missing_perm "mount-observe"
 
 # Add logger after the permission check
 source "${OPS_ROOT}"/helpers/snap-logger.sh "hook-install"
@@ -142,11 +136,7 @@ create_editable_cacerts_trust_store
 declare -a folders=("${OPENSEARCH_PATH_CONF}" "${SNAP_DATA}/usr/share/opensearch")
 for f in "${folders[@]}"; do
     chown -R snap_daemon "${f}/"*
-    chgrp -R snap_daemon "${f}/"*
+    chgrp -R root "${f}/"*
 done
-
-ln -s \
-    "${SNAP_CURRENT}/usr/share/opensearch/lib" \
-    "${SNAP_DATA}/usr/share/opensearch/lib"
 
 bootstrap_cluster

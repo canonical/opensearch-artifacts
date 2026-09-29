@@ -21,9 +21,6 @@ Examples:
       -Enetwork.host=_local_,_site_ \\
       -Ediscovery.seed_hosts=10.0.0.1,10.0.0.2 \\
       -Ecluster.initial_cluster_manager_nodes=node-1
-
-  # node joining an already bootstrapped cluster
-  setup.sh -Ediscovery.seed_hosts=10.0.0.1 -Ecluster.initial_cluster_manager_nodes=
 EOF
 }
 

@@ -110,7 +110,8 @@ execute: |
   # An empty value removes a setting: a node joining an already
   # bootstrapped cluster must be able to drop the bootstrap setting.
   snap run opensearch.setup -Ecluster.initial_cluster_manager_nodes=
-  if grep -q "^cluster.initial_cluster_manager_nodes" "$CONF_DIR"/opensearch.yml; then
+  if grep -q "^cluster.initial_cluster_manager_nodes" \
+      "$CONF_DIR"/opensearch.yml; then
     echo "FAIL: cluster.initial_cluster_manager_nodes should have been removed"
     exit 1
   fi

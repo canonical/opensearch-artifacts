@@ -1,12 +1,12 @@
 summary: OpenSearch Standard Snap Smoke Test
 
-environment:
-  NODE_NAME: opensearch-node-1
-
 execute: |
   # The install hook has already configured the cluster (TLS certificates,
   # security index, default admin credentials) and started the daemon.
   # Verify the out-of-the-box experience here.
+
+  # Node name given by the install hook
+  NODE_NAME="opensearch-$(hostname)"
 
   # Wait for the REST API to be reachable
   retry=0

@@ -16,7 +16,7 @@ suites:
       sysctl -w vm.swappiness=0
       sysctl -w vm.max_map_count=262144
       sysctl -w net.ipv4.tcp_retries2=5
-      snap install "$CRAFT_ARTIFACT" --dangerous
+      snap install "$CRAFT_ARTIFACT" --dangerous --devmode
       bash "$(dirname "$CRAFT_ARTIFACT")/setup-dev-env.sh"
     restore-each: |
       snap remove opensearch --purge
