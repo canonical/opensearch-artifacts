@@ -68,6 +68,32 @@ function seed_hosts() {
     echo "[ ${formatted_hosts} ]"
 }
 
+function setup_security_plugin() {
+    local security_plugin="${OPENSEARCH_PLUGINS}/opensearch-security"
+
+    if [ ! -d "${security_plugin}" ]; then
+        echo "OpenSearch Security Plugin does not exist, disable by default"
+        return
+    fi
+
+    # Installing the demo configuration of a disabled plugin is pointless,
+    # and would fail without OPENSEARCH_INITIAL_ADMIN_PASSWORD.
+    if [ "${DISABLE_INSTALL_DEMO_CONFIG:-}" = "true" ] \
+            || [ "${DISABLE_SECURITY_PLUGIN:-}" = "true" ]; then
+        echo "Disabling execution of install_demo_configuration.sh for OpenSearch Security Plugin"
+    else
+        echo "Enabling execution of install_demo_configuration.sh for OpenSearch Security Plugin"
+        /bin/bash "${security_plugin}/tools/install_demo_configuration.sh" -y -i -s
+    fi
+
+    if [ "${DISABLE_SECURITY_PLUGIN:-}" = "true" ]; then
+        echo "Disabling OpenSearch Security Plugin"
+        opensearch_opts+=("-Eplugins.security.disabled=true")
+    else
+        echo "Enabling OpenSearch Security Plugin"
+    fi
+}
+
 
 export OPENSEARCH_JAVA_OPTS="-Dopensearch.cgroups.hierarchy.override=/ ${OPENSEARCH_JAVA_OPTS:-}"
 
@@ -94,9 +120,10 @@ set_yaml_prop "${conf}" "network.host" "$(network_host)"
 set_yaml_prop "${conf}" "discovery.seed_hosts" "$(seed_hosts)"
 set_yaml_prop "${conf}" "path.data" "${OPENSEARCH_PATH_DATA}"
 set_yaml_prop "${conf}" "path.logs" "${OPENSEARCH_PATH_LOGS}"
-set_yaml_prop "${conf}" "plugins.security.disabled" "true"
 sed -i "s@=logs/@=${OPENSEARCH_PATH_LOGS}/@" "${OPENSEARCH_PATH_CONF}/jvm.options"
 sed -i "s@-javaagent:agent/@-javaagent:${OPENSEARCH_HOME}/agent/@" "${OPENSEARCH_PATH_CONF}/jvm.options"
+
+setup_security_plugin
 
 cat "${conf}"
 

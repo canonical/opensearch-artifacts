@@ -154,6 +154,13 @@ parts:
               "${CRAFT_PRIME}/usr/lib/"
       done
 
+      # --- Security plugin demo configuration ---
+      # install_demo_configuration.sh drops securityadmin_demo.sh in here
+      # on first start, as uid 1000.
+      SECURITY_TOOLS_DIR="${CRAFT_PRIME}/usr/share/opensearch/plugins/opensearch-security/tools"
+      chown 1000:1000 "${SECURITY_TOOLS_DIR}"
+      chmod 755 "${SECURITY_TOOLS_DIR}"
+
       # --- CA truststore ---
       CONTAINER_CONF_DIR="/usr/share/opensearch/config"
       PRIME_CONF_DIR="${CRAFT_PRIME}${CONTAINER_CONF_DIR}"
