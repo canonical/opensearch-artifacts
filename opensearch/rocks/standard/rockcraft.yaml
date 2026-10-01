@@ -92,6 +92,12 @@ parts:
           "${CRAFT_PRIME}/usr/share/opensearch/plugins"
       mkdir -p "${CRAFT_PRIME}/usr/share/opensearch/extensions"
 
+      # Same for the scripts: in the snap bin/ links to the writable snap data
+      # dir and the scripts are in shipped-bin, the rock's home is writable
+      rm -f "${CRAFT_PRIME}/usr/share/opensearch/bin"
+      mv "${CRAFT_PRIME}/usr/share/opensearch/shipped-bin" \
+          "${CRAFT_PRIME}/usr/share/opensearch/bin"
+
       # enable security monitoring
       rocks=usr/share/rocks/
       mkdir -p ${rocks}
