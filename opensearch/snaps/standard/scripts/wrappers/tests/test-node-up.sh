@@ -5,10 +5,10 @@ set -eu
 
 usage() {
 cat << EOF
-usage: test-node-up.sh --node-name cm0 --admin-auth-password admin
+usage: test-node-up.sh --node-name cm0 --admin-auth-password <password>
 Tests if the passed node is up and running.
 --node-name             (Optional)  Name of the node to check the status, default "cm0"
---admin-auth-password   (Optional)  Password for basic auth with the opensearch rest api, default "admin"
+--admin-auth-password   (Required)  Password of the admin user for basic auth with the opensearch rest api
 --help                              Shows help menu
 EOF
 }
@@ -57,7 +57,8 @@ function set_defaults () {
     fi
 
     if [ -z "${admin_auth_password}" ]; then
-        admin_auth_password="admin"
+        echo "ERROR: --admin-auth-password is required. Refer to the help menu." >&2
+        exit 1
     fi
 }
 

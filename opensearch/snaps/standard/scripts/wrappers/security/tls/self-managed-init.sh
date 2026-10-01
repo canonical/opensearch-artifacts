@@ -120,4 +120,4 @@ inverted_admin_subject=$(
         -in "${target_dir}/admin.pem"
 )
 inverted_admin_subject="${inverted_admin_subject##subject=}"
-set_yaml_prop "${opensearch_yaml}" "plugins.security.authcz.admin_dn" "[ \"${inverted_admin_subject}\" ]" "no" "no"
+set_yaml_list "${opensearch_yaml}" "plugins.security.authcz.admin_dn" "${inverted_admin_subject}"

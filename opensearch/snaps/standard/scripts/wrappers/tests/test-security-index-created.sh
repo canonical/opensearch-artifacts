@@ -4,9 +4,9 @@ set -eu
 
 usage() {
 cat << EOF
-usage: test-security-index-created.sh --admin-auth-password admin
+usage: test-security-index-created.sh --admin-auth-password <password>
 Tests if the security index has been successfully created.
---admin-auth-password  (Optional) Password for basic auth with the opensearch rest api, default "admin"
+--admin-auth-password  (Required) Password of the admin user for basic auth with the opensearch rest api
 --help                 Shows help menu
 EOF
 }
@@ -46,7 +46,8 @@ function parse_args () {
 
 function set_defaults () {
     if [ -z "${admin_auth_password}" ]; then
-        admin_auth_password="admin"
+        echo "ERROR: --admin-auth-password is required. Refer to the help menu." >&2
+        exit 1
     fi
 }
 

@@ -12,6 +12,8 @@ To be ran / setup once per cluster.
 --root-password   (Optional)    Passphrase of the root key when signing, defaults to --password
 --name            (Optional)    Name of certificate: required for nodes and clients
 --subject         (Optional)    Subject for the certificate, defaults to CN=localhost
+--sans            (Optional)    Subject alternative names for nodes and clients, e.g: DNS:node1,IP:10.0.0.1
+                                Defaults to DNS:<CN of the subject>
 --target-dir      (Optional)    The target directory where the certificates and related resources are created
 --help                          Shows help menu
 EOF
@@ -33,6 +35,7 @@ root_password=""
 type=""
 res_name=""
 subject=""
+sans=""
 target_dir=""
 
 
@@ -44,6 +47,7 @@ function parse_args () {
         "type"
         "name"
         "subject"
+        "sans"
         "target-dir"
         "help"
     )
@@ -71,6 +75,9 @@ function parse_args () {
                 ;;
             --subject) shift
                 subject=$1
+                ;;
+            --sans) shift
+                sans=$1
                 ;;
             --target-dir) shift
                 target_dir=$1
@@ -225,8 +232,11 @@ function create_certificate () {
     fi
 
     if [ "${type}" == "node" ] || [ "${type}" == "client" ]; then
-        CN="${subject##*'CN='}"
-        echo "subjectAltName=DNS:${CN}" > "${target_dir}/${res_name}.ext"
+        if [ -z "${sans}" ]; then
+            CN="${subject##*'CN='}"
+            sans="DNS:${CN}"
+        fi
+        echo "subjectAltName=${sans}" > "${target_dir}/${res_name}.ext"
         gen_cert_args+=(
             "-extfile" "${target_dir}/${res_name}.ext"
         )
