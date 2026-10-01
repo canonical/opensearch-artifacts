@@ -69,7 +69,7 @@ sudo snap run --shell opensearch.setup -c 'bash "$OPS_ROOT"/security/tls/self-ma
 and permissions**, so that the daemon (`snap_daemon`) can read them and other users cannot read the
 private keys (anyone reading the admin key gets full admin access):
 ```
-sudo sh -c "chown snap_daemon:root $CERTS/*.pem && chmod 660 $CERTS/*.pem"
+sudo sh -c "chown snap_daemon:root $CERTS/* && chmod 660 $CERTS/*.pem $CERTS/*.srl"
 ```
 
 Then restart the daemon, and re-initialize the security index if the admin certificate changed:

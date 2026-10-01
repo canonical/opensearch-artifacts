@@ -40,6 +40,12 @@ for arg in "$@"; do
     fi
 done
 
+# The configuration and the logs are only writable by root
+if [ "$(id -u)" -ne 0 ]; then
+    echo "ERROR: opensearch.setup must be run as root: sudo opensearch.setup $*" >&2
+    exit 1
+fi
+
 
 # Args
 declare -a settings=()
