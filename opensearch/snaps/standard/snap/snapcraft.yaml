@@ -122,6 +122,8 @@ apps:
 
   setup:
     command: opt/opensearch/setup.sh
+    plugs:
+      - network
 
   test-cluster-health-green:
     command: opt/opensearch/tests/test-cluster-health-green.sh
@@ -338,6 +340,13 @@ parts:
           mv "${CRAFT_PART_INSTALL}/${res}" "${CRAFT_PART_INSTALL}/usr/share/opensearch/"
       done
       chmod -R 755 "${CRAFT_PART_INSTALL}/usr/share/opensearch/bin"
+
+      # The snap ships its own JDK (OPENSEARCH_JAVA_HOME): silence the
+      # "no-jdk distributions ... are deprecated" warning of every bin script
+      sed -i 's/^OPENSEARCH_BUNDLED_JDK=false$/OPENSEARCH_BUNDLED_JDK=true/' \
+          "${CRAFT_PART_INSTALL}/usr/share/opensearch/bin/opensearch-env"
+      grep -q '^OPENSEARCH_BUNDLED_JDK=true$' \
+          "${CRAFT_PART_INSTALL}/usr/share/opensearch/bin/opensearch-env"
 
       export JAVA_HOME="/usr/lib/jvm/java-21-openjdk-${CRAFT_ARCH_BUILD_FOR}"
       export OPENSEARCH_PATH_CONF="${CRAFT_PART_INSTALL}/etc/opensearch"

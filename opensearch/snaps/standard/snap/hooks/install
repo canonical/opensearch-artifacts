@@ -147,6 +147,10 @@ function bootstrap_cluster () {
     set_yaml_list "${opensearch_yaml}" "discovery.seed_hosts" "127.0.0.1" "[::1]"
     set_yaml_list "${opensearch_yaml}" "cluster.initial_cluster_manager_nodes" "${node_name}"
     set_yaml_prop "${opensearch_yaml}" "plugins.security.disabled" "false"
+    # As upstream: users with these roles (e.g. admin) can use the security
+    # REST API, to manage users and roles with basic auth
+    set_yaml_list "${opensearch_yaml}" "plugins.security.restapi.roles_enabled" \
+        "all_access" "security_rest_api_access"
 
     local TLS_DIR="${OPS_ROOT}/security/tls"
     source \
@@ -171,6 +175,8 @@ function bootstrap_cluster () {
     for key in "${keys[@]}"; do
         set_access_restrictions "${OPENSEARCH_PATH_CERTS}/${key}.pem" 660
     done
+    # serial number file of the root CA, created when signing
+    set_access_restrictions "${OPENSEARCH_PATH_CERTS}/root-ca.srl" 660
 
     set_initial_passwords
 
