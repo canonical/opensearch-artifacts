@@ -59,4 +59,22 @@ function ensure_plugins_dir () {
 }
 
 
+# Link the scripts shipped by this revision into the writable bin/, which
+# also holds the scripts installed by plugins.
+function ensure_bin_dir () {
+    local bin_dir="${SNAP_DATA}/usr/share/opensearch/bin"
+    local script name
+
+    [ -d "${bin_dir}" ] || as_snap_daemon mkdir -p "${bin_dir}"
+    for script in "${SNAP}"/usr/share/opensearch/shipped-bin/*; do
+        name="$(basename "${script}")"
+        if [ ! -L "${bin_dir}/${name}" ]; then
+            as_snap_daemon ln -s \
+                "${SNAP_CURRENT}/usr/share/opensearch/shipped-bin/${name}" \
+                "${bin_dir}/${name}"
+        fi
+    done
+}
+
 ensure_plugins_dir
+ensure_bin_dir

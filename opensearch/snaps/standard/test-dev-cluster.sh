@@ -4,9 +4,9 @@ set -eu
 
 usage() {
 cat << EOF
-usage: test-dev-cluster.sh --admin-auth-password admin
+usage: test-dev-cluster.sh --admin-auth-password <password>
 Tests if the OpenSearch cluster is well configured.
---admin-auth-password  (Optional) Password for basic auth with the opensearch rest api, default "admin"
+--admin-auth-password  (Required) Password of the admin user for basic auth with the opensearch rest api
 --help                 Shows help menu
 EOF
 }
@@ -65,4 +65,8 @@ function run_tests () {
 
 
 parse_args "$@"
+if [ -z "${admin_auth_password}" ]; then
+    echo "ERROR: --admin-auth-password is required. Refer to the help menu." >&2
+    exit 1
+fi
 run_tests

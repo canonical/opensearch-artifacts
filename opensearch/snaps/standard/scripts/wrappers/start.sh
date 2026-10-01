@@ -67,6 +67,11 @@ function start_opensearch () {
 
     configure_qat
 
+    # A start interrupted while OpenSearch creates its keystore (e.g. a restart
+    # right after install) leaves this file behind, and every later start then
+    # fails on it. No other OpenSearch process runs at this point.
+    rm -f "${OPENSEARCH_PATH_CONF}/opensearch.keystore.tmp"
+
     # Grant read access to the shipped plugins through their real path,
     # which changes with every snap revision.
     export OPENSEARCH_JAVA_OPTS="${OPENSEARCH_JAVA_OPTS:-} -Dsnap.path=${SNAP} -Djava.security.policy=${OPS_ROOT}/security/shipped-plugins.policy"
