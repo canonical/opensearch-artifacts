@@ -5,10 +5,10 @@ set -eu
 
 usage() {
 cat << EOF
-usage: test-node-up.sh --node-name cm0 --admin-auth-password admin
+usage: test-node-up.sh --node-name cm0 --admin-auth-password <password>
 Tests if the passed node is up and running.
---node-name             (Optional)  Name of the node to check the status, default "cm0"
---admin-auth-password   (Optional)  Password for basic auth with the opensearch rest api, default "admin"
+--node-name             (Optional)  Name of the node to check the status, defaults to the configured node.name, else "cm0"
+--admin-auth-password   (Optional)  Password of the admin user, defaults to the one generated on install (root only), else "admin"
 --help                              Shows help menu
 EOF
 }
@@ -53,11 +53,16 @@ function parse_args () {
 
 function set_defaults () {
     if [ -z "${node_name}" ]; then
-        node_name="cm0"
+        # The configured node name, else the one of the documented setup
+        node_name="$("${SNAP}"/usr/bin/yq -r '."node.name" // empty' "${OPENSEARCH_PATH_CONF}/opensearch.yml" 2>/dev/null || true)"
+        node_name="${node_name:-cm0}"
     fi
 
     if [ -z "${admin_auth_password}" ]; then
-        admin_auth_password="admin"
+        # The password generated on install, else the default of the
+        # revisions that did not generate one
+        admin_auth_password="$(sed -n 's/^admin: "\(.*\)"$/\1/p' "${SNAP_COMMON}/init_users_pass.yaml" 2>/dev/null || true)"
+        admin_auth_password="${admin_auth_password:-admin}"
     fi
 }
 

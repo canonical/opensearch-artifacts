@@ -3,6 +3,7 @@
 set -eux
 
 source "${OPS_ROOT}"/helpers/snap-logger.sh "hook-post-refresh"
+source "${OPS_ROOT}"/helpers/config-location.sh
 
 replace_stale_jars() {
     declare -a common=(modules plugins lib)
@@ -17,4 +18,16 @@ replace_stale_jars() {
     done
 }
 
+# The previous revisions documented 'snap start opensearch.daemon' after
+# setting up the node, which leaves the daemon disabled: snapd keeps it
+# disabled, and so stopped, after the refresh. The daemon is enabled on
+# install since this revision: enable it if the node was set up.
+enable_daemon_if_set_up() {
+    if [ "${CONFIG_MIGRATED}" == "yes" ] && config_is_set_up; then
+        snapctl start --enable "${SNAP_INSTANCE_NAME}.daemon"
+    fi
+}
+
+migrate_config_to_common
 replace_stale_jars
+enable_daemon_if_set_up
