@@ -4,9 +4,9 @@ set -eu
 
 usage() {
 cat << EOF
-usage: test-dev-cluster.sh --admin-auth-password admin
+usage: test-dev-cluster.sh --admin-auth-password <password>
 Tests if the OpenSearch cluster is well configured.
---admin-auth-password  (Optional) Password for basic auth with the opensearch rest api, default "admin"
+--admin-auth-password  (Optional) Password of the admin user, defaults to the one generated on install, else "admin"
 --help                 Shows help menu
 EOF
 }
@@ -46,21 +46,26 @@ function parse_args () {
 
 
 function run_tests () {
+    local -a auth_args=()
+    if [ -n "${admin_auth_password}" ]; then
+        auth_args=(--admin-auth-password "${admin_auth_password}")
+    fi
+
     # Check if cluster is healthy (green):
     echo "Running: test-cluster-health-green..."
-    sudo snap run opensearch.test-cluster-health-green --admin-auth-password "${admin_auth_password}"
+    sudo snap run opensearch.test-cluster-health-green "${auth_args[@]}"
 
     echo -e "\n\n---------------\n\n"
 
     # Check if node is up:
     echo "Running: test-node-up..."
-    sudo snap run opensearch.test-node-up --admin-auth-password "${admin_auth_password}"
+    sudo snap run opensearch.test-node-up "${auth_args[@]}"
 
     echo -e "\n\n---------------\n\n"
 
     # Check if the security index is well initialised:
     echo "Running: test-security-index-created..."
-    sudo snap run opensearch.test-security-index-created --admin-auth-password "${admin_auth_password}"
+    sudo snap run opensearch.test-security-index-created "${auth_args[@]}"
 }
 
 

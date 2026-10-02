@@ -22,7 +22,13 @@ function set_defaults () {
 }
 
 function set_ulimits () {
-    exit_if_missing_perm "sys-fs-cgroup-service"
+    # Not fatal: skip the tuning when the interface is not connected so a
+    # fresh install (no manual 'snap connect') still boots successfully.
+    if ! snapctl is-connected "sys-fs-cgroup-service"; then
+        echo "WARN: connection sys-fs-cgroup-service NOT FOUND, skipping ulimits tuning."
+        echo "Please, run command: sudo snap connect opensearch:sys-fs-cgroup-service"
+        return 0
+    fi
 
     # 1. Set the number of open file handles
     # ulimit -n 1024 -- default in local machine
@@ -47,15 +53,15 @@ function set_ulimits () {
 function set_proc_conf () {
     # 1. Allow the opensearch user to Disable all swap files:
     # swapon -a -- default in local machine
-    "${SNAP}"/sbin/sysctl -w vm.swappiness=0
+    "${SNAP}"/usr/sbin/sysctl -w vm.swappiness=0
 
     # 2. Ensuring sufficient virtual memory: https://www.elastic.co/guide/en/elasticsearch/reference/current/vm-max-map-count.html
     # sysctl -w vm.max_map_count=65530 -- default in local machine
-    "${SNAP}"/sbin/sysctl -w vm.max_map_count=262144
+    "${SNAP}"/usr/sbin/sysctl -w vm.max_map_count=262144
 
     # 3. Reduce TCP retransmission timeout = ~6 seconds
     # sysctl -w net.ipv4.tcp_retries2=15 -- default in local machine
-    "${SNAP}"/sbin/sysctl -w net.ipv4.tcp_retries2=5
+    "${SNAP}"/usr/sbin/sysctl -w net.ipv4.tcp_retries2=5
 }
 
 

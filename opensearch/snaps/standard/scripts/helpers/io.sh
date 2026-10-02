@@ -5,6 +5,9 @@ set -eu
 
 function set_access_restrictions () {
     if [[ $# -eq 2 ]]; then
+        # Without CAP_FOWNER, which the snap is not granted, root can only
+        # change the mode of the files it owns
+        chown -R root "${1}"
         chmod -R "${2}" "${1}"
     fi
 
@@ -45,5 +48,5 @@ function file_copy () {
 function copy_files_between_folder () {
     cp -r "$1"* "$2"
     chmod -R 770 "$2"
-    find "$2" -type f -exec chmod 660 {} \;
+    find "$2" -type f -exec chmod 660 {} +
 }
