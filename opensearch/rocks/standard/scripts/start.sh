@@ -9,6 +9,9 @@ INITIAL_CM_NODES="${INITIAL_CM_NODES:-}"
 NETWORK_HOST="${NETWORK_HOST:-_local_,_site_}"
 SEED_HOSTS="${SEED_HOSTS:-}"
 
+# Generated passwords, readable by the opensearch user only
+PASSWORDS_FILE="${OPENSEARCH_PATH_CONF}/init_users_pass.yaml"
+
 
 function set_yaml_prop() {
     local target_file="${1}"
@@ -68,6 +71,54 @@ function seed_hosts() {
     echo "[ ${formatted_hosts} ]"
 }
 
+# Password of each internal user (admin, kibanaserver, ...): the value of
+# OPENSEARCH_INITIAL_<USER>_PASSWORD when set, generated otherwise and stored
+# in ${PASSWORDS_FILE}. Done once, on the first start, which creates the
+# security index from internal_users.yml: ${PASSWORDS_FILE} existing (empty
+# when all the passwords are given) means it is done. The demo configuration
+# sets the admin password, the others are set here.
+function set_initial_passwords() {
+    local internal_users="${OPENSEARCH_PATH_CONF}/opensearch-security/internal_users.yml"
+    local hash_tool="${OPENSEARCH_PLUGINS}/opensearch-security/tools/hash.sh"
+    local user var hash
+    local -a users
+
+    if [ -f "${PASSWORDS_FILE}" ]; then
+        return
+    fi
+
+    mapfile -t users < <(/usr/bin/python3 /usr/bin/init_users.py users --file "${internal_users}")
+
+    # moved into place once the demo configuration is installed
+    (umask 077 && : > "${PASSWORDS_FILE}.tmp")
+
+    # keep the passwords out of the xtrace output
+    { set +x; } 2>/dev/null
+    for user in "${users[@]}"; do
+        var="OPENSEARCH_INITIAL_$(echo "${user}" | tr '[:lower:]-' '[:upper:]_')_PASSWORD"
+        if [ -z "${!var:-}" ]; then
+            export "${var}=$(/usr/bin/python3 /usr/bin/init_users.py generate-password)"
+            # quoted: the password stays a string
+            printf '%s: "%s"\n' "${user}" "${!var}" >> "${PASSWORDS_FILE}.tmp"
+        fi
+
+        if [ "${user}" = "admin" ]; then
+            continue
+        fi
+
+        hash="$(bash "${hash_tool}" -env "${var}")"
+        if ! [[ "${hash}" =~ ^\$2[aby]\$[0-9]{2}\$[./A-Za-z0-9]{53}$ ]]; then
+            echo "ERROR: could not hash the initial password of ${user}." >&2
+            exit 1
+        fi
+        /usr/bin/python3 /usr/bin/init_users.py set-hash \
+            --file "${internal_users}" --user "${user}" --hash "${hash}"
+    done
+    set -x
+
+    echo "Initial passwords not given are generated in ${PASSWORDS_FILE}"
+}
+
 function setup_security_plugin() {
     local security_plugin="${OPENSEARCH_PLUGINS}/opensearch-security"
 
@@ -76,14 +127,17 @@ function setup_security_plugin() {
         return
     fi
 
-    # Installing the demo configuration of a disabled plugin is pointless,
-    # and would fail without OPENSEARCH_INITIAL_ADMIN_PASSWORD.
+    # Installing the demo configuration of a disabled plugin is pointless
     if [ "${DISABLE_INSTALL_DEMO_CONFIG:-}" = "true" ] \
             || [ "${DISABLE_SECURITY_PLUGIN:-}" = "true" ]; then
         echo "Disabling execution of install_demo_configuration.sh for OpenSearch Security Plugin"
     else
+        set_initial_passwords
         echo "Enabling execution of install_demo_configuration.sh for OpenSearch Security Plugin"
         /bin/bash "${security_plugin}/tools/install_demo_configuration.sh" -y -i -s
+        if [ -f "${PASSWORDS_FILE}.tmp" ]; then
+            mv "${PASSWORDS_FILE}.tmp" "${PASSWORDS_FILE}"
+        fi
     fi
 
     if [ "${DISABLE_SECURITY_PLUGIN:-}" = "true" ]; then
@@ -126,5 +180,12 @@ sed -i "s@-javaagent:agent/@-javaagent:${OPENSEARCH_HOME}/agent/@" "${OPENSEARCH
 setup_security_plugin
 
 cat "${conf}"
+
+# The initial passwords are only needed to set up the users
+while IFS='=' read -r envvar_key _; do
+    if [[ "${envvar_key}" =~ ^OPENSEARCH_INITIAL_[A-Z0-9_]+_PASSWORD$ ]]; then
+        unset "${envvar_key}"
+    fi
+done < <(env)
 
 exec "${OPENSEARCH_BIN}"/opensearch "${opensearch_opts[@]}"

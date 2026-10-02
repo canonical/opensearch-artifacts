@@ -38,6 +38,11 @@ environment:
 
   KNN_LIB_DIR: /usr/share/opensearch/plugins/opensearch-knn/lib
 
+  # Align with upstream: expose the OpenSearch and JDK tools
+  # (opensearch-keystore, opensearch-plugin, keytool...) on the PATH.
+  PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\
+    /usr/lib/jvm/java-21-openjdk/bin:/usr/share/opensearch/bin"
+
 services:
   opensearch:
     override: replace
@@ -64,7 +69,7 @@ parts:
     plugin: nil
     after: [user]
     stage-snaps:
-      - opensearch/3/edge
+      - opensearch/3/edge/pr-33  # TODO: revert to 3/edge before merging
     stage-packages:
       - base-files
       - python3-venv
@@ -166,6 +171,9 @@ parts:
       SECURITY_TOOLS_DIR="${CRAFT_PRIME}/usr/share/opensearch/plugins/opensearch-security/tools"
       chown 1000:1000 "${SECURITY_TOOLS_DIR}"
       chmod 755 "${SECURITY_TOOLS_DIR}"
+      # Like upstream, make the security tools (securityadmin.sh, hash.sh,
+      # audit_config_migrater.sh...) executable.
+      chmod 755 "${SECURITY_TOOLS_DIR}"/*
 
       # --- CA truststore ---
       CONTAINER_CONF_DIR="/usr/share/opensearch/config"
@@ -209,6 +217,8 @@ parts:
     organize:
       start.sh: usr/bin/start.sh
       set_conf.py: usr/bin/set_conf.py
+      init_users.py: usr/bin/init_users.py
     stage:
       - usr/bin/start.sh
       - usr/bin/set_conf.py
+      - usr/bin/init_users.py
