@@ -4,11 +4,13 @@ execute: |
   # The install hook configures and starts the cluster: check that
   # OpenSearch is up and ships the expected plugins.
 
-  ADMIN_PASSWORD=$(sed -n 's/^admin: "\(.*\)"$/\1/p' /var/snap/opensearch/common/init_users_pass.yaml)
+  PASSWORDS=/var/snap/opensearch/common/init_users_pass.yaml
+  ADMIN_PASSWORD=$(sed -n 's/^admin: "\(.*\)"$/\1/p' "$PASSWORDS")
+  URL=https://localhost:9200
 
   retry=0
   until [ "$(curl -sk -o /dev/null -w '%{http_code}' \
-    https://localhost:9200/.opendistro_security -u "admin:$ADMIN_PASSWORD")" = "200" ]; do
+    "$URL"/.opendistro_security -u "admin:$ADMIN_PASSWORD")" = "200" ]; do
     retry=$((retry + 1))
     if [ $retry -ge 60 ]; then
       echo "OpenSearch did not become ready in time"
@@ -20,11 +22,14 @@ execute: |
 
   snap run opensearch.test-node-up --node-name "opensearch-$(hostname)" \
     --admin-auth-password "$ADMIN_PASSWORD"
-  snap run opensearch.test-cluster-health-green --admin-auth-password "$ADMIN_PASSWORD"
-  snap run opensearch.test-security-index-created --admin-auth-password "$ADMIN_PASSWORD"
+  snap run opensearch.test-cluster-health-green \
+    --admin-auth-password "$ADMIN_PASSWORD"
+  snap run opensearch.test-security-index-created \
+    --admin-auth-password "$ADMIN_PASSWORD"
 
   # All the bundled plugins are shipped, except these
-  plugins=$(curl -sk https://localhost:9200/_cat/plugins?h=component -u "admin:$ADMIN_PASSWORD")
+  plugins=$(curl -sk "$URL/_cat/plugins?h=component" \
+    -u "admin:$ADMIN_PASSWORD")
   echo "$plugins"
   for p in repository-s3 repository-azure repository-gcs prometheus-exporter; do
     if echo "$plugins" | grep -qx "$p"; then
