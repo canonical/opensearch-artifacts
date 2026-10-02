@@ -15,8 +15,8 @@ execute: |
       port="$1"
       name="$2"
       for _ in $(seq 1 60); do
-          reported="$(curl -sk --max-time 3 "https://127.0.0.1:${port}" "${auth[@]}" \
-              | jq -r '.name // empty' 2>/dev/null || true)"
+          reported="$(curl -sk --max-time 3 "https://127.0.0.1:${port}" \
+              "${auth[@]}" | jq -r '.name // empty' 2>/dev/null || true)"
           if [ "${reported}" = "${name}" ]; then
               echo "${name} answered on port ${port}"
               return 0
@@ -34,8 +34,9 @@ execute: |
   wait_for_nodes_joined() {
       expected="$1"
       for _ in $(seq 1 60); do
-          successful="$(curl -sk --max-time 3 https://127.0.0.1:9200/_nodes "${auth[@]}" \
-              | jq -r '._nodes.successful // 0' 2>/dev/null || true)"
+          successful="$(curl -sk --max-time 3 https://127.0.0.1:9200/_nodes \
+              "${auth[@]}" | jq -r '._nodes.successful // 0' 2>/dev/null \
+              || true)"
           if [ "${successful}" = "${expected}" ]; then
               return 0
           fi
@@ -103,8 +104,8 @@ execute: |
 
   # query all nodes of cluster
   wait_for_nodes_joined 3
-  successful_nodes="$(curl -sk -XGET https://127.0.0.1:9200/_nodes "${auth[@]}" | \
-    jq ._nodes.successful)"
+  successful_nodes="$(curl -sk -XGET https://127.0.0.1:9200/_nodes \
+    "${auth[@]}" | jq ._nodes.successful)"
   echo "Successful nodes: ${successful_nodes}"
   if [ "${successful_nodes}" != 3 ]; then
       echo "Error: Wrong number of nodes."
@@ -124,7 +125,8 @@ execute: |
   fi
 
   # Security must be enforced: no credentials, no answer.
-  anon_status="$(curl -sk -o /dev/null -w '%{http_code}' https://127.0.0.1:9200)"
+  anon_status="$(curl -sk -o /dev/null -w '%{http_code}' \
+    https://127.0.0.1:9200)"
   if [ "${anon_status}" != 401 ]; then
       echo "Error: anonymous request returned ${anon_status}, expected 401."
       exit 1
