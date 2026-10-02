@@ -31,53 +31,81 @@ sudo sysctl -w net.ipv4.tcp_retries2=5
 ```
 
 ### Starting OpenSearch:
-#### Creating certificates:
+The install hook sets up and starts a ready-to-use single node cluster:
+- node `opensearch-<hostname>` in cluster `opensearch-cluster`, with the upstream default roles
+- self-signed TLS certificates (root CA, admin and node) in
+  `/var/snap/opensearch/common/etc/opensearch/certificates`, the node certificate valid for
+  `localhost`, the hostname and the IP addresses of the host
+- random passwords for all the internal users (`admin`, `kibanaserver`, ...), readable by root only:
+  ```
+  sudo cat /var/snap/opensearch/common/init_users_pass.yaml
+  ```
+
+#### Reconfiguring OpenSearch:
+Settings are written to `opensearch.yml` with `opensearch.setup`, like the upstream `-E` option:
 ```
-# create the certificates
-sudo snap run opensearch.setup          \
-    --node-name cm0                     \
-    --node-roles cluster_manager,data   \
-    --tls-priv-key-root-pass root1234   \
-    --tls-priv-key-admin-pass admin1234 \
-    --tls-priv-key-node-pass node1234   \
-    --tls-init-setup yes    # this creates the root and admin certs as well.
+sudo snap run opensearch.setup -Ecluster.name=logs -Enode.roles=cluster_manager,data
+sudo snap restart opensearch.daemon
+```
+Run `sudo snap run opensearch.setup --help` for lists, removing a setting and more examples.
+
+#### Replacing the certificates:
+The certificates are generated with the scripts shipped in the snap, run in the snap environment:
+```
+CERTS=/var/snap/opensearch/common/etc/opensearch/certificates
+
+# root CA and admin certificate (empty passwords generate unencrypted keys)
+sudo snap run --shell opensearch.setup -c 'bash "$OPS_ROOT"/security/tls/self-managed-init.sh \
+    --root-password "" --admin-password "" --root-subject "" --admin-subject "" \
+    --rest-with-tls yes --target-dir "$OPENSEARCH_PATH_CERTS"'
+
+# node certificate, signed by the root CA
+sudo snap run --shell opensearch.setup -c 'bash "$OPS_ROOT"/security/tls/self-managed-node.sh \
+    --name "opensearch-$(hostname)" --root-password "" --node-password "" --node-subject "" \
+    --rest-with-tls yes --target-dir "$OPENSEARCH_PATH_CERTS"'
 ```
 
-#### Starting OpenSearch:
+**The generated files are owned by root and readable by all users: you must set their ownership
+and permissions**, so that the daemon (`snap_daemon`) can read them and other users cannot read the
+private keys (anyone reading the admin key gets full admin access):
 ```
-sudo snap start opensearch.daemon
+sudo sh -c "chown snap_daemon:root $CERTS/* && chmod 660 $CERTS/*.pem $CERTS/*.srl"
 ```
 
-#### Creating the Security Index:
+Then restart the daemon, and re-initialize the security index if the admin certificate changed:
 ```
-sudo snap run opensearch.security-init --tls-priv-key-admin-pass=admin1234
+sudo snap restart opensearch.daemon
+sudo snap run opensearch.security-init    # --tls-priv-key-admin-pass <pass> for an encrypted admin key
 ```
 
 ### Testing the OpenSearch setup:
 You can either consume the REST API yourself or see if the below commands succeed, and you see that the tests `"PASSED"` successfully: 
 ```
+# The admin password generated on install (root only):
+ADMIN_PASSWORD=$(sudo sed -n 's/^admin: "\(.*\)"$/\1/p' /var/snap/opensearch/common/init_users_pass.yaml)
+
 # Check if cluster is healthy (green):
-sudo snap run opensearch.test-cluster-health-green
+sudo snap run opensearch.test-cluster-health-green --admin-auth-password "$ADMIN_PASSWORD"
 > ....
 > PASSED
 
 
 # Check if node is up:
-sudo snap run opensearch.test-node-up
+sudo snap run opensearch.test-node-up --node-name "opensearch-$(hostname)" --admin-auth-password "$ADMIN_PASSWORD"
 > ....
 > PASSED
 
 
 # Check if the security index is well initialised:
-sudo snap run opensearch.test-security-index-created
+sudo snap run opensearch.test-security-index-created --admin-auth-password "$ADMIN_PASSWORD"
 > ....
 > PASSED
 ```
 
 or:
 ```
-sudo cp /var/snap/opensearch/current/etc/opensearch/certificates/node-cm0.pem ./
-curl --cacert node-cm0.pem -XGET https://admin:admin@localhost:9200/_cluster/health?pretty
+sudo curl --cacert /var/snap/opensearch/common/etc/opensearch/certificates/root-ca.pem \
+    -u "admin:$ADMIN_PASSWORD" https://localhost:9200/_cluster/health?pretty
 > {
   "cluster_name": "opensearch-cluster",
   "status": "green",

@@ -2,19 +2,79 @@
 
 set -eux
 
+
 source "${OPS_ROOT}"/helpers/snap-logger.sh "hook-post-refresh"
 
-replace_stale_jars() {
-    declare -a common=(modules plugins lib)
-    for dir in "${common[@]}"; do
-        setpriv \
-            --clear-groups \
-            --reuid snap_daemon \
-            --regid snap_daemon -- \
-            "${SNAP}/usr/bin/rsync" -a --delete \
-            "${SNAP}/usr/share/opensearch/${dir}/" \
-            "${OPENSEARCH_HOME}/${dir}/"
+
+function as_snap_daemon () {
+    "${SNAP}"/usr/bin/setpriv \
+        --clear-groups \
+        --reuid snap_daemon \
+        --regid snap_daemon -- \
+        "$@"
+}
+
+
+function ensure_plugins_dir () {
+    local shipped="${SNAP}/usr/share/opensearch/shipped-plugins"
+    local new_version name plugin descriptor version
+
+    new_version="$(sed -n "s/^version:[[:space:]]*//p" "${SNAP}/meta/snap.yaml" | tr -d "'\"")"
+
+    for plugin in "${OPENSEARCH_PLUGINS}"/*; do
+        [ -e "${plugin}" ] || [ -L "${plugin}" ] || continue
+        name="$(basename "${plugin}")"
+
+        if [ -d "${shipped}/${name}" ]; then
+            if [ ! -L "${plugin}" ]; then
+                as_snap_daemon rm -rf "${plugin:?}"
+            fi
+            continue
+        fi
+
+        if [ -L "${plugin}" ]; then
+            as_snap_daemon rm -f "${plugin}"
+            continue
+        fi
+
+        descriptor="${plugin}/plugin-descriptor.properties"
+        version=""
+        if [ -f "${descriptor}" ]; then
+            version="$(sed -n "s/^opensearch\.version=//p" "${descriptor}")"
+        fi
+        if [ "${version}" != "${new_version}" ]; then
+            as_snap_daemon rm -rf "${plugin:?}"
+            echo "NOTE: removed ${name} (built for OpenSearch ${version:-unknown}, this snap is ${new_version}). The old copy remains in the previous revision's data directory; reinstall it with 'snap run opensearch.plugin install ${name}' once available for ${new_version}."
+        fi
+    done
+
+    for plugin in "${shipped}"/*/; do
+        name="$(basename "${plugin}")"
+        if [ ! -L "${OPENSEARCH_PLUGINS}/${name}" ]; then
+            as_snap_daemon ln -s \
+                "${SNAP_CURRENT}/usr/share/opensearch/shipped-plugins/${name}" \
+                "${OPENSEARCH_PLUGINS}/${name}"
+        fi
     done
 }
 
-replace_stale_jars
+
+# Link the scripts shipped by this revision into the writable bin/, which
+# also holds the scripts installed by plugins.
+function ensure_bin_dir () {
+    local bin_dir="${SNAP_DATA}/usr/share/opensearch/bin"
+    local script name
+
+    [ -d "${bin_dir}" ] || as_snap_daemon mkdir -p "${bin_dir}"
+    for script in "${SNAP}"/usr/share/opensearch/shipped-bin/*; do
+        name="$(basename "${script}")"
+        if [ ! -L "${bin_dir}/${name}" ]; then
+            as_snap_daemon ln -s \
+                "${SNAP_CURRENT}/usr/share/opensearch/shipped-bin/${name}" \
+                "${bin_dir}/${name}"
+        fi
+    done
+}
+
+ensure_plugins_dir
+ensure_bin_dir

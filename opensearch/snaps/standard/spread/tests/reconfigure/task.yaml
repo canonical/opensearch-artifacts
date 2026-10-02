@@ -1,0 +1,55 @@
+summary: OpenSearch Standard Snap Reconfiguration Test
+
+environment:
+  NODE_NAME: node-1
+  CLUSTER_NAME: reconfigured-cluster
+
+execute: |
+  # Reconfigure the cluster installed by the install hook, as documented
+  # in the README, and check that the new settings are applied.
+
+  PASSWORDS=/var/snap/opensearch/common/init_users_pass.yaml
+  ADMIN_PASSWORD=$(sed -n 's/^admin: "\(.*\)"$/\1/p' "$PASSWORDS")
+  URL=https://localhost:9200
+
+  wait_for_cluster () {
+    local retry=0
+    until [ "$(curl -sk -o /dev/null -w '%{http_code}' \
+      "$URL"/.opendistro_security -u "admin:$ADMIN_PASSWORD")" = "200" ]; do
+      retry=$((retry + 1))
+      if [ $retry -ge 60 ]; then
+        echo "OpenSearch did not become ready in time"
+        snap logs opensearch.daemon -n=50 || true
+        exit 1
+      fi
+      sleep 2
+    done
+  }
+
+  wait_for_cluster
+
+  snap run opensearch.setup \
+    -Ecluster.name="$CLUSTER_NAME" \
+    -Enode.name="$NODE_NAME" \
+    -Enode.roles=cluster_manager,data \
+    -Ecluster.initial_cluster_manager_nodes="$NODE_NAME"
+  snap restart opensearch.daemon
+  wait_for_cluster
+
+  snap run opensearch.test-node-up --node-name "$NODE_NAME" \
+    --admin-auth-password "$ADMIN_PASSWORD"
+  snap run opensearch.test-cluster-health-green \
+    --admin-auth-password "$ADMIN_PASSWORD"
+
+  info=$(curl -sk -u "admin:$ADMIN_PASSWORD" "$URL")
+  if ! echo "$info" | grep -q "\"cluster_name\" *: *\"$CLUSTER_NAME\""; then
+    echo "FAIL: cluster.name was not applied"
+    exit 1
+  fi
+
+  roles=$(curl -sk -u "admin:$ADMIN_PASSWORD" \
+    "$URL/_cat/nodes?h=node.roles" | tr -d '[:space:]')
+  if [ "$roles" != "cluster_manager,data" ]; then
+    echo "FAIL: node.roles is ${roles}, expected cluster_manager,data"
+    exit 1
+  fi

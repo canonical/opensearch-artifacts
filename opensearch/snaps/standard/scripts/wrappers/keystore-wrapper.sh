@@ -2,4 +2,5 @@
 
 set -e -o pipefail
 
-snap run --shell opensearch.daemon -- /snap/opensearch/current/usr/share/opensearch/bin/opensearch-keystore.orig "${@}"
+# Called by bin/opensearch on start, already in the snap environment
+exec /snap/opensearch/current/usr/share/opensearch/shipped-bin/opensearch-keystore.orig "${@}"

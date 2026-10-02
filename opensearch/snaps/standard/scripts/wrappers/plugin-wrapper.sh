@@ -2,4 +2,5 @@
 
 set -e -o pipefail
 
-snap run --shell opensearch.daemon -- /snap/opensearch/current/usr/share/opensearch/bin/opensearch-plugin.orig "${@}"
+# Only called from within the snap environment
+exec /snap/opensearch/current/usr/share/opensearch/shipped-bin/opensearch-plugin.orig "${@}"

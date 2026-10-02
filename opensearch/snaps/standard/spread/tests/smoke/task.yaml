@@ -1,95 +1,49 @@
 summary: OpenSearch Standard Snap Smoke Test
 
 execute: |
-  # Allow the daemon to set sysctl properties at startup
-  snap set opensearch set-sysctl-props=yes
+  # The install hook configures and starts the cluster: check that
+  # OpenSearch is up and ships the expected plugins.
 
-  # Configure the single-node cluster and generate TLS certificates
-  # node-roles must include both cluster_manager and data: a
-  # cluster_manager-only node cannot hold shards, so the
-  # .opendistro_security index would never start.
-  snap run opensearch.setup \
-    --node-name cm0 \
-    --node-roles cluster_manager,data \
-    --tls-init-setup yes \
-    --tls-priv-key-root-pass changeit \
-    --tls-priv-key-admin-pass changeit \
-    --tls-priv-key-node-pass changeit
+  PASSWORDS=/var/snap/opensearch/common/init_users_pass.yaml
+  ADMIN_PASSWORD=$(sed -n 's/^admin: "\(.*\)"$/\1/p' "$PASSWORDS")
+  URL=https://localhost:9200
 
-  # Start the daemon
-  snap start opensearch.daemon
-
-  # Wait for the REST API to be reachable
-  retry=0
-  until curl -sk https://localhost:9200 >/dev/null 2>&1; do
-    retry=$((retry + 1))
-    if [ $retry -ge 60 ]; then
-      echo "OpenSearch daemon did not become ready in time"
-      snap logs opensearch.daemon -n=50 || true
-      exit 1
-    fi
-    sleep 2
-  done
-
-  # Initialize the security plugin (creates the .opendistro_security index)
-  snap run opensearch.security-init --tls-priv-key-admin-pass changeit
-
-  # Wait for the security index to be created
   retry=0
   until [ "$(curl -sk -o /dev/null -w '%{http_code}' \
-    https://localhost:9200/.opendistro_security -u admin:admin)" = "200" ]; do
+    "$URL"/.opendistro_security -u "admin:$ADMIN_PASSWORD")" = "200" ]; do
     retry=$((retry + 1))
-    if [ $retry -ge 30 ]; then
-      echo "Security index was not created in time"
+    if [ $retry -ge 60 ]; then
+      echo "OpenSearch did not become ready in time"
       snap logs opensearch.daemon -n=50 || true
       exit 1
     fi
     sleep 2
   done
 
-  # Run the bundled test scripts
-  echo "=== test-node-up ==="
-  snap run opensearch.test-node-up --node-name cm0
+  snap run opensearch.test-node-up --node-name "opensearch-$(hostname)" \
+    --admin-auth-password "$ADMIN_PASSWORD"
+  snap run opensearch.test-cluster-health-green \
+    --admin-auth-password "$ADMIN_PASSWORD"
+  snap run opensearch.test-security-index-created \
+    --admin-auth-password "$ADMIN_PASSWORD"
 
-  echo "=== test-cluster-health-green ==="
-  snap run opensearch.test-cluster-health-green
-
-  echo "=== test-security-index-created ==="
-  snap run opensearch.test-security-index-created
-
-  # Verify that the 4 removed plugins are absent while others remain.
-  # The standard snap ships all bundled plugins except:
-  #   repository-s3, repository-azure, repository-gcs, prometheus-exporter
-  echo "=== plugins check ==="
-  plugins=$(curl -sk https://localhost:9200/_cat/plugins -u admin:admin)
-  echo "Installed plugins:"
+  # All the bundled plugins are shipped, except these
+  plugins=$(curl -sk "$URL/_cat/plugins?h=component" \
+    -u "admin:$ADMIN_PASSWORD")
   echo "$plugins"
-
-  declare -a removed_plugins=(
-      "repository-s3"
-      "repository-azure"
-      "repository-gcs"
-      "prometheus-exporter"
-  )
-
-  for p in "${removed_plugins[@]}"; do
-    if echo "$plugins" | grep -q "\b${p}\b"; then
-      echo "FAIL: Expected ${p} to be removed, but it is installed"
+  for p in repository-s3 repository-azure repository-gcs prometheus-exporter; do
+    if echo "$plugins" | grep -qx "$p"; then
+      echo "FAIL: ${p} should not be shipped"
       exit 1
     fi
   done
-
-  # Sanity-check that at least the security plugin remains (always required).
-  if ! echo "$plugins" | grep -q "opensearch-security"; then
-    echo "FAIL: opensearch-security should be installed"
+  for p in opensearch-security opensearch-performance-analyzer; do
+    if ! echo "$plugins" | grep -qx "$p"; then
+      echo "FAIL: ${p} should be shipped"
+      exit 1
+    fi
+  done
+  if [ "$(echo "$plugins" | wc -l)" -lt 20 ]; then
+    echo "FAIL: expected at least 20 plugins"
     exit 1
   fi
-
-  # The standard snap should retain significantly more plugins.
-  plugin_count=$(echo "$plugins" | wc -l)
-  if [ "$plugin_count" -lt 10 ]; then
-    echo "FAIL: Expected at least 10 plugins, got $plugin_count"
-    exit 1
-  fi
-
-  echo "All smoke tests passed."
