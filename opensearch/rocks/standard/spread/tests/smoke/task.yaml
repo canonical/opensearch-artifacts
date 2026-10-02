@@ -3,14 +3,20 @@ summary: OpenSearch Rock Smoke Test
 execute: |
   version="$(cat "${PROJECT_PATH}/rockcraft.yaml" | yq .version | tr -d '"')"
 
+  # Same contract as the upstream image: the security plugin is enabled
+  # with demo TLS certificates, and the admin password must be strong.
+  admin_password="Sm0ke-Test_Pa55word!"
+  auth=(-u "admin:${admin_password}")
+
   # A node needs ~30s to answer HTTP even on fast hardware, so poll for
-  # readiness instead of sleeping a fixed amount.
+  # readiness instead of sleeping a fixed amount. Until the security index
+  # is initialized, the node answers in plain text: ignore jq failures.
   wait_for_node() {
       port="$1"
       name="$2"
       for _ in $(seq 1 60); do
-          reported="$(curl -sk --max-time 3 "http://127.0.0.1:${port}" \
-              | jq -r '.name // empty')"
+          reported="$(curl -sk --max-time 3 "https://127.0.0.1:${port}" \
+              "${auth[@]}" | jq -r '.name // empty' 2>/dev/null || true)"
           if [ "${reported}" = "${name}" ]; then
               echo "${name} answered on port ${port}"
               return 0
@@ -20,7 +26,7 @@ execute: |
       echo "Error: ${name} did not answer on port ${port} within 180s."
       # OpenSearch logs to a file, not to stdout, so docker logs is useless.
       docker exec "${name}" \
-          sh -c 'tail -n 50 /var/log/opensearch/logs/*.log' || true
+          sh -c 'tail -n 50 /usr/share/opensearch/logs/*.log' || true
       return 1
   }
 
@@ -28,8 +34,9 @@ execute: |
   wait_for_nodes_joined() {
       expected="$1"
       for _ in $(seq 1 60); do
-          successful="$(curl -sk --max-time 3 http://127.0.0.1:9200/_nodes \
-              | jq -r '._nodes.successful // 0')"
+          successful="$(curl -sk --max-time 3 https://127.0.0.1:9200/_nodes \
+              "${auth[@]}" | jq -r '._nodes.successful // 0' 2>/dev/null \
+              || true)"
           if [ "${successful}" = "${expected}" ]; then
               return 0
           fi
@@ -42,6 +49,7 @@ execute: |
   # create first cm_node container
   container_0_id=$(docker run \
       -d --rm -it \
+      -e OPENSEARCH_INITIAL_ADMIN_PASSWORD="${admin_password}" \
       -e NODE_NAME=cm0 \
       -e INITIAL_CM_NODES=cm0 \
       -p 9200:9200 \
@@ -57,6 +65,7 @@ execute: |
   # create data/voting_only node container
   container_1_id=$(docker run \
       -d --rm -it \
+      -e OPENSEARCH_INITIAL_ADMIN_PASSWORD="${admin_password}" \
       -e NODE_NAME=data1 \
       -e SEED_HOSTS="${container_0_ip}" \
       -e NODE_ROLES=data,voting_only \
@@ -73,6 +82,7 @@ execute: |
   # create 2nd cm_node container
   docker run \
       -d --rm -it \
+      -e OPENSEARCH_INITIAL_ADMIN_PASSWORD="${admin_password}" \
       -e NODE_NAME=cm1 \
       -e SEED_HOSTS="${container_0_ip},${container_1_ip}" \
       -e INITIAL_CM_NODES="cm0,cm1" \
@@ -84,7 +94,7 @@ execute: |
   wait_for_node 9202 cm1
 
   # test node
-  cluster_resp=$(curl -sk -XGET http://127.0.0.1:9200)
+  cluster_resp=$(curl -sk -XGET https://127.0.0.1:9200 "${auth[@]}")
   echo -e "Cluster Response: \n ${cluster_resp}"
   node_name=$(echo "${cluster_resp}" | jq -r .name)
   if [ "${node_name}" != "cm0" ]; then
@@ -94,15 +104,15 @@ execute: |
 
   # query all nodes of cluster
   wait_for_nodes_joined 3
-  successful_nodes="$(curl -sk -XGET http://127.0.0.1:9200/_nodes | \
-    jq ._nodes.successful)"
+  successful_nodes="$(curl -sk -XGET https://127.0.0.1:9200/_nodes \
+    "${auth[@]}" | jq ._nodes.successful)"
   echo "Successful nodes: ${successful_nodes}"
   if [ "${successful_nodes}" != 3 ]; then
       echo "Error: Wrong number of nodes."
       exit 1
   fi
 
-  all_nodes="$(curl -sk -XGET http://127.0.0.1:9200/_nodes/ | \
+  all_nodes="$(curl -sk -XGET https://127.0.0.1:9200/_nodes/ "${auth[@]}" | \
     jq '.nodes | values[] | .name' | \
     jq -s '. |= if . then sort else empty end' | \
     jq -r '. | values[]' | \
@@ -111,6 +121,20 @@ execute: |
   echo "All nodes: ${all_nodes}"
   if [ "${all_nodes}" != "cm0,cm1,data1" ]; then
       echo "Error: Wrong nodes in cluster."
+      exit 1
+  fi
+
+  # Security must be enforced: no credentials, no answer.
+  anon_status="$(curl -sk -o /dev/null -w '%{http_code}' \
+    https://127.0.0.1:9200)"
+  if [ "${anon_status}" != 401 ]; then
+      echo "Error: anonymous request returned ${anon_status}, expected 401."
+      exit 1
+  fi
+
+  # Plain HTTP must be refused now that TLS is on the REST layer.
+  if curl -s --max-time 3 http://127.0.0.1:9200 >/dev/null; then
+      echo "Error: REST layer still answers over plain HTTP."
       exit 1
   fi
 

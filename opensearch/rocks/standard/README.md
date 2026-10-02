@@ -59,11 +59,48 @@ rockcraft.skopeo --insecure-policy \
 
 docker run \
   -d --rm -it \
+  -e OPENSEARCH_INITIAL_ADMIN_PASSWORD="<strong-password>" \
   -e NODE_NAME=cm0 \
   -e INITIAL_CM_NODES=cm0 \
   -p 9200:9200 \
   --name cm0 \
   opensearch:"${version}"
+
+curl -k -u admin:"<strong-password>" https://localhost:9200
+
+`OPENSEARCH_INITIAL_ADMIN_PASSWORD` is optional: without it, a password is
+generated (see [Security](#security)).
+
+### Security
+
+Like the upstream `opensearchproject/opensearch` image, the rock starts with the
+security plugin enabled and TLS on both the transport and REST layers. On first
+start it runs the security plugin's `install_demo_configuration.sh`, which
+installs the demo certificates and sets the password of the `admin` user.
+
+| Variable | Description |
+|---|---|
+| `OPENSEARCH_INITIAL_ADMIN_PASSWORD` | Password of the `admin` user. Generated when not set. It must be at least 8 characters long, contain an uppercase letter, a lowercase letter, a digit and a special character, and be rated strong by [zxcvbn](https://lowe.github.io/tryzxcvbn). |
+| `OPENSEARCH_INITIAL_<USER>_PASSWORD` | Password of the other users of the demo configuration: `ANOMALYADMIN`, `KIBANARO`, `KIBANASERVER`, `LOGSTASH`, `READALL`, `SNAPSHOTRESTORE`, e.g. `OPENSEARCH_INITIAL_KIBANASERVER_PASSWORD`. Generated when not set. |
+| `DISABLE_INSTALL_DEMO_CONFIG` | Set to `true` to skip the demo configuration, e.g. when you mount your own certificates and security configuration. |
+| `DISABLE_SECURITY_PLUGIN` | Set to `true` to start OpenSearch with the security plugin disabled (plain HTTP, no authentication). The demo configuration is then skipped and no password is needed. |
+
+The passwords are set on the first start only. The generated ones are stored
+in `/usr/share/opensearch/config/init_users_pass.yaml`, readable by the
+`opensearch` user only, as `<user>: "<password>"` lines:
+
+```bash
+docker exec <container> cat /usr/share/opensearch/config/init_users_pass.yaml
+```
+
+The users are stored in the security index of the cluster, created by the first
+node: in a multi-node cluster, the passwords of that node apply to all of them.
+Passing the same passwords to every node, as in the example below, avoids
+looking them up.
+
+The demo certificates are the same on every node, which lets a multi-node
+cluster form out of the box, but their private keys are public: do not use them
+in production.
 
 ### Testing a multi nodes deployment:
 
@@ -71,6 +108,7 @@ docker run \
 # create first cm_node container
 container_0_id=$(docker run \
   -d --rm -it \
+  -e OPENSEARCH_INITIAL_ADMIN_PASSWORD="<strong-password>" \
   -e NODE_NAME=cm0 \
   -e INITIAL_CM_NODES=cm0 \
   -p 9200:9200 \
@@ -84,6 +122,7 @@ sleep 15s
 # create data/voting_only node container
 container_1_id=$(docker run \
     -d --rm -it \
+    -e OPENSEARCH_INITIAL_ADMIN_PASSWORD="<strong-password>" \
     -e NODE_NAME=data1 \
     -e SEED_HOSTS="${container_0_ip}" \
     -e NODE_ROLES=data,voting_only \
@@ -98,6 +137,7 @@ sleep 15s
 # create 2nd cm_node container
 container_2_id=$(docker run \
     -d --rm -it \
+    -e OPENSEARCH_INITIAL_ADMIN_PASSWORD="<strong-password>" \
     -e NODE_NAME=cm1 \
     -e SEED_HOSTS="${container_0_ip},${container_1_ip}" \
     -e INITIAL_CM_NODES="cm0,cm1" \
@@ -112,12 +152,12 @@ sleep 15s
 You now can query the nodes:
 
 ```
-curl -X GET http://127.0.1.1:9200/_nodes/
+curl -k -u admin:"<strong-password>" -X GET https://127.0.0.1:9200/_nodes/
 ```
 
 And expect to see 3 nodes.
 
-**NOTE:** This deployment IS NOT suitable for production AS IS. As this deployment disables and does NOT configure the security of OpenSearch. Please use it as part of the Juju OpenSearch K8s charm once ready.
+**NOTE:** This deployment IS NOT suitable for production AS IS, as it secures OpenSearch with the publicly known demo certificates. Please use it as part of the Juju OpenSearch K8s charm once ready.
 
 ## License
 
