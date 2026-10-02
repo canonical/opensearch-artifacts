@@ -2,12 +2,5 @@
 
 set -e -o pipefail
 
-tool=/snap/opensearch/current/usr/share/opensearch/shipped-bin/opensearch-keystore.orig
-
-# Already in the snap environment (e.g. called by bin/opensearch on start):
-# a nested snap run is denied under strict confinement
-if [ "${SNAP_NAME:-}" = "opensearch" ]; then
-    exec "${tool}" "${@}"
-fi
-
-snap run --shell opensearch.daemon -- "${tool}" "${@}"
+# Called by bin/opensearch on start, already in the snap environment
+exec /snap/opensearch/current/usr/share/opensearch/shipped-bin/opensearch-keystore.orig "${@}"
