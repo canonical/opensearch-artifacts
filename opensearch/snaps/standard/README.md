@@ -96,6 +96,12 @@ above with the existing CA, fix the file permissions, and restart the daemon.
 
 ### Plugin removal and rollback
 
+Plugins bundled with this snap must remain installed. `opensearch.plugin remove`
+rejects their removal, including with `--purge`, without changing their files or
+configuration. Where a plugin supports disabling features, use its upstream
+settings or API. To choose which plugins are installed, use the
+`opensearch-chiseled` snap instead.
+
 Plugin configuration normally stays shared across revisions. If you change a
 plugin's settings from A to B and revert, the plugin continues to use B.
 
