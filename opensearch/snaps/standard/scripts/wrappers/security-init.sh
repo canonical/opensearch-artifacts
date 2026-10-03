@@ -33,18 +33,26 @@ function parse_args () {
     local LONG_OPTS_LIST=(
         "tls-priv-key-admin-pass"
     )
-    local opts=$(getopt \
+    local opts
+    opts=$(getopt \
       --longoptions "$(printf "%s:," "${LONG_OPTS_LIST[@]}")" \
       --name "$(readlink -f "${BASH_SOURCE}")" \
       --options "" \
       -- "$@"
-    )
+    ) || return $?
     eval set -- "${opts}"
 
     while [ $# -gt 0 ]; do
         case $1 in
             --tls-priv-key-admin-pass) shift
                 tls_priv_key_admin_pass=$1
+                ;;
+            --) shift
+                if [ $# -gt 0 ]; then
+                    echo "Unexpected positional arguments; use named options." >&2
+                    return 1
+                fi
+                break
                 ;;
         esac
         shift
