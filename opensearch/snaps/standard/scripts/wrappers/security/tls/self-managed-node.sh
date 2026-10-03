@@ -160,14 +160,32 @@ set_yaml_prop "${opensearch_yaml}" "plugins.security.ssl.transport.pemcert_filep
 set_yaml_prop "${opensearch_yaml}" "plugins.security.ssl.transport.pemkey_filepath" "${target_dir}/node-${name}-key.pem"
 if [ -n "${node_password}" ]; then
     set_yaml_prop "${opensearch_yaml}" "plugins.security.ssl.transport.pemkey_password" "${node_password}"
+else
+    # The new key is unencrypted; a password left by an earlier key prevents startup.
+    remove_yaml_prop "${opensearch_yaml}" "plugins.security.ssl.transport.pemkey_password"
 fi
 
 if [ "${rest_with_tls}" == "yes" ]; then
     set_yaml_prop "${opensearch_yaml}" "plugins.security.ssl.http.pemtrustedcas_filepath" "${target_dir}/root-ca.pem"
     set_yaml_prop "${opensearch_yaml}" "plugins.security.ssl.http.pemcert_filepath" "${target_dir}/node-${name}.pem"
     set_yaml_prop "${opensearch_yaml}" "plugins.security.ssl.http.pemkey_filepath" "${target_dir}/node-${name}-key.pem"
+fi
+
+# HTTP may already use this key even when --rest-with-tls is no. Keep its password
+# in sync whenever its key file changes, but leave a separate HTTP key alone.
+http_key_path=$("${SNAP}/usr/bin/yq" -r '."plugins.security.ssl.http.pemkey_filepath" // ""' "${opensearch_yaml}")
+
+# OpenSearch resolves relative paths from the configuration directory.
+if [[ "${http_key_path}" != /* ]]; then
+    http_key_path="${OPENSEARCH_PATH_CONF}/${http_key_path}"
+fi
+
+# Compare resolved paths so a relative path or symlink still identifies the same key.
+if [ "$(readlink -m "${http_key_path}")" = "$(readlink -m "${target_dir}/node-${name}-key.pem")" ]; then
     if [ -n "${node_password}" ]; then
         set_yaml_prop "${opensearch_yaml}" "plugins.security.ssl.http.pemkey_password" "${node_password}"
+    else
+        remove_yaml_prop "${opensearch_yaml}" "plugins.security.ssl.http.pemkey_password"
     fi
 fi
 
