@@ -4,6 +4,7 @@ set -eux
 
 
 source "${OPS_ROOT}"/helpers/snap-logger.sh "hook-post-refresh"
+source "${OPS_ROOT}"/helpers/set-conf.sh
 
 
 # Run commands as the account that owns OpenSearch's writable files.
@@ -137,3 +138,6 @@ function ensure_bin_dir () {
 
 ensure_plugins_dir
 ensure_bin_dir
+
+# TODO only for OpenSearch 2 - Migrate the upstream heap-dump default; preserve any path chosen by the operator.
+replace_in_file "${OPENSEARCH_PATH_CONF}/jvm.options" '^-XX:HeapDumpPath=data$' "-XX:HeapDumpPath=${OPENSEARCH_VARLOG}/java_heapdump.hprof"

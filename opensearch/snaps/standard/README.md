@@ -193,6 +193,15 @@ supports this mechanism; it cannot reconstruct configuration from older snaps
 that never saved it. The main `opensearch.yml`, keystore, and certificates remain
 shared and are not restored by this mechanism.
 
+### Heap dumps
+
+On a Java heap exhaustion, the default JVM settings write a dump to
+`/var/snap/opensearch/common/var/log/opensearch/java_heapdump.hprof`.
+This requires enough free disk space. The JVM keeps the first dump and refuses
+to overwrite it; move or remove it after investigation to allow another dump.
+Heap dumps can contain credentials and document contents: keep them private.
+Refresh preserves a custom `-XX:HeapDumpPath` setting in `jvm.options`.
+
 ### Testing the OpenSearch setup:
 You can either consume the REST API yourself or see if the below commands succeed, and you see that the tests `"PASSED"` successfully: 
 ```
