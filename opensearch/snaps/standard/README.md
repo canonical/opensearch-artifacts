@@ -50,6 +50,11 @@ sudo snap restart opensearch.daemon
 Run `sudo snap run opensearch.setup --help` for lists, removing a setting and more examples.
 
 #### Replacing the certificates:
+The following replaces the root CA, admin certificate and node certificate for the
+single-node setup above. Clients must trust the new root CA before reconnecting.
+For a multi-node cluster, coordinate CA trust and certificate replacement across
+all nodes; do not generate an independent root CA on each node.
+
 The certificates are generated with the scripts shipped in the snap, run in the snap environment:
 ```
 CERTS=/var/snap/opensearch/common/etc/opensearch/certificates
@@ -72,11 +77,22 @@ private keys (anyone reading the admin key gets full admin access):
 sudo sh -c "chown snap_daemon:root $CERTS/* && chmod 660 $CERTS/*.pem $CERTS/*.srl"
 ```
 
-Then restart the daemon, and re-initialize the security index if the admin certificate changed:
+Then restart the daemon to load the new certificates and settings:
 ```
 sudo snap restart opensearch.daemon
-sudo snap run opensearch.security-init    # --tls-priv-key-admin-pass <pass> for an encrypted admin key
 ```
+
+**Do not run `opensearch.security-init` after certificate rotation, even if the
+admin certificate changed.** It uploads the local seed security configuration and
+can overwrite users, roles and role mappings created through the API. The existing
+security index remains valid after certificate replacement. It does not need to
+be initialized again. See the upstream [securityadmin documentation](https://docs.opensearch.org/latest/security/configuration/security-admin/)
+for details about configuration uploads.
+
+After startup, run the health checks below and verify that an existing API-created
+user can still authenticate and access its permitted indices using the new CA.
+If only the node certificate needs renewal, run only the node-certificate command
+above with the existing CA, fix the file permissions, and restart the daemon.
 
 ### Plugin removal and rollback
 
