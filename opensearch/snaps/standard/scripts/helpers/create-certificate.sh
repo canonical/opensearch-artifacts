@@ -49,14 +49,14 @@ function parse_args () {
         "subject"
         "sans"
         "target-dir"
-        "help"
     )
-    local opts=$(getopt \
-      --longoptions "$(printf "%s:," "${LONG_OPTS_LIST[@]}")" \
+    local opts
+    opts=$(getopt \
+      --longoptions "$(printf "%s:," "${LONG_OPTS_LIST[@]}")help" \
       --name "$(readlink -f "${BASH_SOURCE}")" \
       --options "" \
       -- "$@"
-    )
+    ) || return $?
     eval set -- "${opts}"
 
     while [ $# -gt 0 ]; do
