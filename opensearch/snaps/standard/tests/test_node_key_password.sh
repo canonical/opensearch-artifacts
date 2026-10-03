@@ -108,3 +108,24 @@ check_password transport test-symlink-password
 check_password http test-symlink-password
 "${SNAP}/usr/bin/yq" -e '."cluster.name" == "password-regression"' "${configuration}" > /dev/null
 echo 'PASS: node key passwords follow encryption; separate HTTP settings are preserved.'
+
+# A nested HTTP setting still refers to the shared key during transport-only rotation.
+rotate_node --rest-with-tls yes --node-password test-nested-password
+"${SNAP}/usr/bin/yq" -y -i '
+    .plugins.security.ssl.http = {
+        pemkey_filepath: ."plugins.security.ssl.http.pemkey_filepath",
+        pemkey_password: ."plugins.security.ssl.http.pemkey_password"
+    } | del(."plugins.security.ssl.http.pemkey_filepath", ."plugins.security.ssl.http.pemkey_password")
+' "${configuration}"
+rotate_node --rest-with-tls no
+"${SNAP}/usr/bin/yq" -e '
+    (.plugins.security.ssl.http | has("pemkey_password") | not)
+    and (has("plugins.security.ssl.http.pemkey_password") | not)
+' "${configuration}" > /dev/null
+openssl pkey -in "${certificates}/node-regression-key.pem" -passin pass: -noout
+
+# Encrypting the same key must also update HTTP when its path remains nested.
+rotate_node --rest-with-tls no --node-password test-nested-new-password
+"${SNAP}/usr/bin/yq" -e '."plugins.security.ssl.http.pemkey_password" == "test-nested-new-password"' "${configuration}" > /dev/null
+openssl pkey -in "${certificates}/node-regression-key.pem" -passin pass:test-nested-new-password -noout
+echo 'PASS: nested HTTP paths follow shared-key encryption changes.'

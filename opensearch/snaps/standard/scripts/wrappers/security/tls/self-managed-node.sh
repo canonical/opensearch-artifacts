@@ -179,7 +179,7 @@ fi
 
 # HTTP may already use this key even when --rest-with-tls is no. Keep its password
 # in sync whenever its key file changes, but leave a separate HTTP key alone.
-http_key_path=$("${SNAP}/usr/bin/yq" -r '."plugins.security.ssl.http.pemkey_filepath" // ""' "${opensearch_yaml}")
+http_key_path=$(get_yaml_prop "${opensearch_yaml}" "plugins.security.ssl.http.pemkey_filepath")
 
 # OpenSearch resolves relative paths from the configuration directory.
 if [[ "${http_key_path}" != /* ]]; then
