@@ -219,8 +219,10 @@ function create_certificate () {
         "x509"
         "-req"
         "-in" "${target_dir}/${res_name}.csr"
-        "-CA" "${target_dir}/root-ca.pem"
-        "-CAkey" "${target_dir}/root-ca-key.pem"
+        "-CA" "${ca_dir}/root-ca.pem"
+        "-CAkey" "${ca_dir}/root-ca-key.pem"
+        # Keep serial-number updates in staging until the replacement is validated.
+        "-CAserial" "${target_dir}/root-ca.srl"
         "-CAcreateserial"
         "-sha256"
         "-out" "${target_dir}/${res_name}.pem"
@@ -251,14 +253,97 @@ function create_certificate () {
 }
 
 
+# Generate and validate a complete replacement before changing the live files.
+# The subshell keeps temporary paths and cleanup traps out of the calling wrapper.
+function generate_and_publish_certificate () (
+    [ -d "${target_dir}" ] || mkdir -p "${target_dir}"
+    ca_dir=${target_dir}
+    final_dir=${target_dir}
+
+    if [[ "${type}" == root ]]; then
+        pair_name=root-ca
+    else
+        pair_name=${res_name}
+    fi
+
+    files=("${pair_name}-key.pem" "${pair_name}.pem")
+    if [[ "${type}" != root ]]; then
+        files+=(root-ca.srl)
+    fi
+
+    target_dir=$(mktemp -d "${final_dir}/.certificate-XXXXXX")
+    published=()
+    cleanup() {
+        local status=$?
+        local file
+        if (( status != 0 )); then
+            # Restore any file replaced before a later rename failed.
+            for file in "${published[@]}"; do
+                if [[ -e "${target_dir}/old-${file}" ]]; then
+                    if [[ ! "${target_dir}/old-${file}" -ef "${final_dir}/${file}" ]]; then
+                        mv -f "${target_dir}/old-${file}" "${final_dir}/${file}"
+                    fi
+                else
+                    rm -f "${final_dir}/${file}"
+                fi
+            done
+        fi
+        rm -rf "${target_dir}"
+        exit "${status}"
+    }
+    trap cleanup EXIT
+    trap 'exit 1' HUP INT TERM
+
+    # Keep the old files available without copying their contents.
+    for file in "${files[@]}"; do
+        if [[ -e "${final_dir}/${file}" || -L "${final_dir}/${file}" ]]; then
+            [[ -f "${final_dir}/${file}" && ! -L "${final_dir}/${file}" ]] || exit 1
+            ln "${final_dir}/${file}" "${target_dir}/old-${file}"
+        fi
+    done
+
+    # Generate in staging; leaf certificates still use the existing CA.
+    if [[ "${type}" == root ]]; then
+        create_root_certificate
+        verify_ca=${target_dir}/root-ca.pem
+    else
+        if [[ -f "${final_dir}/root-ca.srl" ]]; then
+            cp "${final_dir}/root-ca.srl" "${target_dir}/root-ca.srl"
+        fi
+        create_certificate
+        verify_ca=${ca_dir}/root-ca.pem
+    fi
+
+    # Check that the key matches and the CA validates the certificate.
+    openssl pkey \
+        -in "${target_dir}/${pair_name}-key.pem" \
+        -passin "pass:${password}" \
+        -pubout > "${target_dir}/key-public.pem"
+
+    openssl x509 \
+        -in "${target_dir}/${pair_name}.pem" \
+        -pubkey -noout > "${target_dir}/cert-public.pem"
+
+    cmp "${target_dir}/key-public.pem" "${target_dir}/cert-public.pem"
+    openssl verify -CAfile "${verify_ca}" "${target_dir}/${pair_name}.pem"
+
+    # Prepare metadata before changing any live file.
+    for file in "${files[@]}"; do
+        if [[ -e "${target_dir}/old-${file}" ]]; then
+            chmod --reference="${target_dir}/old-${file}" "${target_dir}/${file}"
+            chown --reference="${target_dir}/old-${file}" "${target_dir}/${file}"
+        fi
+    done
+
+    # Each rename is atomic
+    for file in "${files[@]}"; do
+        published+=("${file}")
+        mv -f "${target_dir}/${file}" "${final_dir}/${file}"
+    done
+)
+
+
 parse_args "$@"
 set_defaults
 validate_args
-
-[ -d "${target_dir}" ] || mkdir -p "${target_dir}"
-
-if [[ "${type}" == "root" ]]; then
-    create_root_certificate
-else
-    create_certificate
-fi
+generate_and_publish_certificate
