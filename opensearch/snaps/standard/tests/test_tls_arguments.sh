@@ -46,6 +46,17 @@ for option in password root-password type name subject sans target-dir; do
 done
 reject "$helper" --target-dir "$certs" --type root --unknown-option
 
+# Positional arguments are errors, including those explicitly placed after --.
+reject "$init" root-password --target-dir "$certs" --root-password test-root --
+reject "$init" --target-dir "$certs" --root-password test-root stray
+reject "$init" --target-dir "$certs" --root-password test-root -- stray
+reject "$node" root-password --target-dir "$certs" --name test-node --root-password test-root --
+reject "$node" --target-dir "$certs" --name test-node --root-password test-root stray
+reject "$node" --target-dir "$certs" --name test-node --root-password test-root -- stray
+reject "$helper" root-password --target-dir "$certs" --type root --
+reject "$helper" --target-dir "$certs" --type root --password=test-root stray
+reject "$helper" --target-dir "$certs" --type root --password=test-root -- stray
+
 for script in "$init" "$node" "$helper"; do
     bash "$script" --help 2>&1 | cat > "$work/output"
     grep -q 'usage:' "$work/output"
@@ -55,8 +66,18 @@ done
 # Explicit empty passwords are valid and keep the existing unencrypted-key UX.
 mkdir -p "$work/empty/certificates"
 printf '%s\n' '---' > "$work/empty/opensearch.yml"
-OPENSEARCH_PATH_CONF="$work/empty" bash "$init" --target-dir="$work/empty/certificates" --root-password= --admin-password=
+OPENSEARCH_PATH_CONF="$work/empty" bash "$init" --target-dir="$work/empty/certificates" --root-password= --admin-password= --
 openssl pkey -in "$work/empty/certificates/root-ca-key.pem" -passin pass: -noout
-OPENSEARCH_PATH_CONF="$work/empty" bash "$node" --target-dir="$work/empty/certificates" --name=empty-password --node-password=
+OPENSEARCH_PATH_CONF="$work/empty" bash "$node" --target-dir="$work/empty/certificates" --name=empty-password --node-password= --
 openssl pkey -in "$work/empty/certificates/node-empty-password-key.pem" -passin pass: -noout
+# Omitted and explicitly empty CA passwords both work with an unencrypted CA.
+OPENSEARCH_PATH_CONF="$work/empty" bash "$node" --target-dir="$work/empty/certificates" --name=explicit-empty-root --root-password= --node-password= --
+openssl pkey -in "$work/empty/certificates/node-explicit-empty-root-key.pem" -passin pass: -noout
+mkdir -p "$work/omitted/certificates"
+printf '%s\n' '---' > "$work/omitted/opensearch.yml"
+OPENSEARCH_PATH_CONF="$work/omitted" bash "$init" --target-dir="$work/omitted/certificates" --
+openssl pkey -in "$work/omitted/certificates/root-ca-key.pem" -passin pass: -noout
+mkdir "$work/end-marker"
+bash "$helper" --type root --target-dir "$work/end-marker" --
+openssl pkey -in "$work/end-marker/root-ca-key.pem" -passin pass: -noout
 echo 'PASS: TLS arguments reject errors without changing certificates or configuration'

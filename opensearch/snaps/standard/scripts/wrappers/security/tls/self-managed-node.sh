@@ -80,6 +80,13 @@ function parse_args () {
             --help) usage
                 exit
                 ;;
+            --) shift
+                if [ $# -gt 0 ]; then
+                    echo "Unexpected positional arguments; use named options." >&2
+                    return 1
+                fi
+                break
+                ;;
         esac
         shift
     done
