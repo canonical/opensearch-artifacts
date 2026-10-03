@@ -78,6 +78,28 @@ sudo snap restart opensearch.daemon
 sudo snap run opensearch.security-init    # --tls-priv-key-admin-pass <pass> for an encrypted admin key
 ```
 
+### Plugin removal and rollback
+
+Plugin configuration normally stays shared across revisions. If you change a
+plugin's settings from A to B and revert, the plugin continues to use B.
+
+`sudo snap run opensearch.plugin remove <plugin> --purge` removes the current
+plugin and its live configuration. If you then revert to a retained revision,
+the snap restores that revision's saved configuration A, provided the plugin
+still matches and its configuration directory is missing. Existing directories
+are never overwritten or merged, including after a plugin reinstall.
+
+Missing plugin configuration is recovered at startup regardless of whether a
+purge or manual deletion removed it. Native removal updates the active revision's
+saved copy, so restarting that revision does not undo its own purge.
+
+Each revision saves its plugin configuration before refresh, when the service
+stops, and after startup recovery. These private copies stay in that revision's
+data and are removed with the revision. Recovery requires a revision that already
+supports this mechanism; it cannot reconstruct configuration from older snaps
+that never saved it. The main `opensearch.yml`, keystore, and certificates remain
+shared and are not restored by this mechanism.
+
 ### Testing the OpenSearch setup:
 You can either consume the REST API yourself or see if the below commands succeed, and you see that the tests `"PASSED"` successfully: 
 ```

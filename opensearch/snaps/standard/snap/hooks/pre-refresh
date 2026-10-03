@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+set -eu
+
+# Capture edits made since the last service stop, including when the service is
+# disabled. snapd keeps this revision's snapshot when it copies data for refresh.
+exec "${SNAP}/opt/opensearch/save-plugin-configuration.sh"

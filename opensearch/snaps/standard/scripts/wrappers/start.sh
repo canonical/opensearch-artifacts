@@ -67,6 +67,15 @@ function start_opensearch () {
 
     configure_qat
 
+    # snap revert does not run post-refresh. Recover missing plugin configuration
+    # here, before plugins load, while leaving any existing configuration alone.
+    # Use the installer's account so restored files have the same ownership.
+    "${SNAP}"/usr/bin/setpriv \
+        --clear-groups \
+        --reuid snap_daemon \
+        --regid root -- \
+        "${SNAP}/usr/bin/python3" "${SNAP}/opt/opensearch/helpers/plugin-configuration.py" restore
+
     # A start interrupted while OpenSearch creates its keystore (e.g. a restart
     # right after install) leaves this file behind, and every later start then
     # fails on it. No other OpenSearch process runs at this point.

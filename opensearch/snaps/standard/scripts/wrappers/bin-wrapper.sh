@@ -6,6 +6,12 @@ if [ -z "${OPENSEARCH_JAVA_OPTS}" ]; then
     OPENSEARCH_JAVA_OPTS="-Xms1g -Xmx1g"
 fi
 
+# Route `snap run opensearch.plugin` through our plugin wrapper so removal
+# also updates this revision's saved configuration.
+if [ "${bin_script}" = "opensearch-plugin.orig" ]; then
+    bin_script="opensearch-plugin"
+fi
+
 # Run with the root group: the config is owned by snap_daemon:root, and tools
 # such as opensearch-plugin copy the parent's owner and group onto the files
 # they create, which is only allowed to a member of that group.
