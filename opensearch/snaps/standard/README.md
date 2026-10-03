@@ -49,6 +49,77 @@ sudo snap restart opensearch.daemon
 ```
 Run `sudo snap run opensearch.setup --help` for lists, removing a setting and more examples.
 
+#### Joining an existing cluster:
+
+Installation creates a standalone cluster UUID, even before you store documents.
+OpenSearch cannot merge that identity into another cluster by changing discovery
+settings. Join using a new data directory and keep the original directory intact.
+Its indices will **not** appear in the target cluster; migrate any required data
+separately using snapshot/restore or reindexing.
+
+This example adds a data/ingest node to an existing healthy cluster. Use a
+compatible OpenSearch version, the target's exact cluster name, and reachable
+cluster-manager transport addresses (port 9300 by default). Install any plugins
+required by the target's indices, such as their analysis plugins. Before starting the
+join, arrange a node certificate and matching PKCS#8 private key signed by a CA
+trusted by the target. The certificate must cover this node's hostname/IP and be
+authorized by `plugins.security.nodes_dn` on the other nodes. The joining node
+must likewise trust and authorize the target's node certificates. Independent
+per-node CAs generated on installation do not establish this trust.
+
+First stop the joining node, save its current configuration (including its TLS
+files), and create a fresh data directory. Run the block as one command: `sh -e`
+stops on failure, and `mkdir` without `-p` refuses an existing backup or data path,
+including a symlink. Do not remove an existing directory to make it succeed.
+
+```sh
+sudo sh -eu <<'SH'
+COMMON=/var/snap/opensearch/common
+snap stop --disable opensearch.daemon
+mkdir -m 700 "$COMMON/before-join"
+cp -a "$COMMON/etc/opensearch" "$COMMON/before-join/"
+mkdir -m 770 "$COMMON/var/lib/opensearch-joined"
+chown snap_daemon:root "$COMMON/var/lib/opensearch-joined"
+SH
+```
+
+Provision the target-trusted TLS files under
+`/var/snap/opensearch/common/etc/opensearch/certificates`, owned by
+`snap_daemon:root` with mode `660`. Configure the transport and HTTP certificate,
+key and trusted-CA paths and the peer node DNs using `opensearch.setup -E...`.
+Keep private keys out of shared directories. Do not generate a new independent
+root CA or run `opensearch.security-init`: the target cluster already has its
+security index. See the upstream [TLS configuration](https://docs.opensearch.org/latest/security/configuration/tls/)
+for the certificate settings and requirements.
+
+With TLS configured, replace `logs` and `10.0.0.1` below with the target cluster's
+name and seed address, then configure and start the joining node:
+
+```sh
+sudo snap run opensearch.setup \
+    -Ecluster.name=logs -Enode.roles=data,ingest \
+    -Epath.data=/var/snap/opensearch/common/var/lib/opensearch-joined \
+    -Ediscovery.seed_hosts=10.0.0.1 \
+    -Ecluster.initial_cluster_manager_nodes= \
+    -Eplugins.security.allow_default_init_securityindex=false &&
+sudo snap start --enable opensearch.daemon
+```
+
+Authenticate using the **target cluster's** credentials; this node's install-time
+passwords belong to its retained standalone cluster. Query `GET /` on both nodes
+and confirm identical `cluster_uuid` values, then check `GET /_cluster/health`
+and `GET /_cat/nodes?v` for the expected membership and healthy shard allocation.
+Use the target CA with your client and retain hostname verification. A successful
+TCP connection or a running service alone does not establish that the join worked.
+
+Keep the selected `path.data` for subsequent starts, refreshes and reverts. Do not
+repeat the fresh-directory step on restart. If the join fails, stop the daemon
+and restore the saved configuration and certificates from `before-join/opensearch`
+to return to the original data path and standalone UUID. Keep both data directories;
+do not restore the original configuration on a successfully joined node until it
+has been safely removed from the target cluster. For background, see upstream
+[cluster bootstrapping](https://docs.opensearch.org/latest/tuning-your-cluster/discovery-cluster-formation/bootstrapping/).
+
 #### Replacing the certificates:
 The following replaces the root CA, admin certificate and node certificate for the
 single-node setup above. Clients must trust the new root CA before reconnecting.

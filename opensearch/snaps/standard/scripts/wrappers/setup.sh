@@ -27,8 +27,18 @@ Examples:
       -Ediscovery.seed_hosts=10.0.0.1,10.0.0.2 \\
       -Ecluster.initial_cluster_manager_nodes=node-1
 
-  # node joining an already bootstrapped cluster
-  setup.sh -Ediscovery.seed_hosts=10.0.0.1 -Ecluster.initial_cluster_manager_nodes=
+Joining an existing cluster:
+  Installation has already created a standalone cluster identity. Changing
+  discovery settings cannot merge it into another cluster automatically.
+  in order to do that, stop the daemon, back up its configuration and certificates, and provision TLS trusted by the
+  target cluster. Create a NEW empty data directory owned by snap_daemon,
+  retaining the original data. Then, for example:
+  setup.sh -Ecluster.name=logs -Enode.roles=data,ingest \\
+      -Epath.data=/var/snap/opensearch/common/var/lib/opensearch-joined \\
+      -Ediscovery.seed_hosts=10.0.0.1 -Ecluster.initial_cluster_manager_nodes= \\
+      -Eplugins.security.allow_default_init_securityindex=false
+  The original indices are retained on disk; they are not merged into the
+  target cluster. See the README's joining procedure before running this.
 EOF
 }
 
