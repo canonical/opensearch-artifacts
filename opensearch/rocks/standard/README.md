@@ -102,6 +102,23 @@ The demo certificates are the same on every node, which lets a multi-node
 cluster form out of the box, but their private keys are public: do not use them
 in production.
 
+### Running the OpenSearch tools
+
+The OpenSearch tools (`opensearch-keystore`, `opensearch-plugin`, ...) are on
+the `PATH`, and the security plugin tools (`securityadmin.sh`, `hash.sh`, ...)
+are in `/usr/share/opensearch/plugins/opensearch-security/tools`.
+
+Unlike the upstream image, `docker exec` runs as `root` by default: run the
+tools as the `opensearch` user with `-u opensearch`. Files written as `root`,
+such as the keystore, are owned by `root` and OpenSearch can no longer read
+them, which fails `_nodes/reload_secure_settings` and the next start:
+
+```bash
+echo "<value>" | docker exec -i -u opensearch <container> \
+  opensearch-keystore add --stdin <setting>
+docker exec -u opensearch <container> opensearch-keystore list
+```
+
 ### Testing a multi nodes deployment:
 
 ```
