@@ -43,14 +43,10 @@ public class CheckPluginCompatibility {
             }
         }
 
-        // Count declared names to find custom plugins that duplicate one another.
-        Map<String, Integer> customPluginNameCounts = new HashMap<>();
-        compatibleCustomPlugins.values().forEach(pluginInfo -> customPluginNameCounts.merge(pluginInfo.getName(), 1, Integer::sum));
-
-        // Remove custom plugins whose names clash with bundled plugins or other custom plugins.
+        // A new snap may bundle a plugin or module that was previously installed as a custom plugin.
+        // Keep the bundled version when its declared name matches, even if the directory names differ.
         compatibleCustomPlugins.forEach((customPluginPath, pluginInfo) -> {
-            // OpenSearch cannot load two plugins with the same declared name.
-            if (bundledPluginNames.contains(pluginInfo.getName()) || customPluginNameCounts.get(pluginInfo.getName()) > 1) {
+            if (bundledPluginNames.contains(pluginInfo.getName())) {
                 pluginRemovalReasons.put(customPluginPath, "Duplicate plugin name: " + pluginInfo.getName());
             }
         });
