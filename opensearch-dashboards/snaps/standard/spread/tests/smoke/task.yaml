@@ -57,24 +57,45 @@ execute: |
   echo "Backend version: $(echo "${os_resp}" | jq -r '.version.number')"
 
   # --- Point the snap at the OpenSearch backend ----------------------------
-  # The node certificate is self-signed, so disable peer verification.
-  conf="/var/snap/${snap_name}/current/etc/opensearch-dashboards/opensearch_dashboards.yml"
+  # The daemon is started at install time against https://localhost:9200 and
+  # its configuration lives in $SNAP_COMMON.
+  conf="/var/snap/${snap_name}/common/etc/opensearch-dashboards"
+  conf="${conf}/opensearch_dashboards.yml"
   os_yq="/snap/${snap_name}/current/usr/bin/yq"
 
-  "${os_yq}" -y -i '."opensearch.hosts" = ["https://localhost:9200"]' "${conf}"
-  "${os_yq}" -y -i '."opensearch.ssl.verificationMode" = "none"' "${conf}"
-  "${os_yq}" -y -i '."opensearch.username" = "kibanaserver"' "${conf}"
-  "${os_yq}" -y -i '."opensearch.password" = "kibanaserver"' "${conf}"
-  "${os_yq}" -y -i '."server.host" = "0.0.0.0"' "${conf}"
-  chown snap_daemon:root "${conf}"
+  daemon="${snap_name}.opensearch-dashboards-daemon"
+  if ! snap services "${daemon}" | grep -qE "^${daemon} +enabled +active"; then
+    echo "FAIL: the daemon was not started at install time"
+    dump_diagnostics
+    exit 1
+  fi
+
+  if [ "$("${os_yq}" -c '."opensearch.hosts"' "${conf}")" != \
+      '["https://localhost:9200"]' ]; then
+    echo "FAIL: opensearch.hosts does not default to https://localhost:9200"
+    exit 1
+  fi
+
+  # Trust the OpenSearch CA; setup restarts the daemon.
+  ca="/var/snap/opensearch/current/etc/opensearch/certificates/root-ca.pem"
+  snap run "${snap_name}.setup" \
+    -EHOSTS="localhost" \
+    -ECA="$(cat "${ca}")" \
+    -EUSERNAME=kibanaserver \
+    -EPASSWORD=kibanaserver \
+    -ESERVER_HOST=0.0.0.0
 
   echo "=== opensearch_dashboards.yml ==="
-  "${os_yq}" \
-    '."opensearch.hosts", ."opensearch.ssl.verificationMode", ."server.host"' \
-    "${conf}"
+  cat "${conf}"
 
-  # --- Start Dashboards ----------------------------------------------------
-  snap start "${snap_name}"
+  ca_file="$("${os_yq}" -r '."opensearch.ssl.certificateAuthorities"[0]' \
+    "${conf}")"
+  if ! cmp -s "${ca}" "${ca_file}" || \
+      [ "$("${os_yq}" -r '."opensearch.ssl.verificationMode"' "${conf}")" \
+        != "certificate" ]; then
+    echo "FAIL: the OpenSearch CA was not configured"
+    exit 1
+  fi
 
   status_resp=""
   resp=""

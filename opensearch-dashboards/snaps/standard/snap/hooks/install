@@ -4,15 +4,10 @@ set -eux
 
 
 source "${OPS_ROOT}"/helpers/io.sh
-source "${OPS_ROOT}"/helpers/set-conf.sh
+source "${OPS_ROOT}"/helpers/config.sh
 
-
-set -eux
 
 function create_file_structure () {
-    mkdir -p "${OPENSEARCH_DASHBOARDS_PATH_CONF}/"
-    cp -r "${SNAP}/etc/" "${SNAP_DATA_CURRENT}/"
-
     declare -a folders=("${OPENSEARCH_DASHBOARDS_RW_HOME}" "${OPENSEARCH_DASHBOARDS_VARLIB}" "${OPENSEARCH_DASHBOARDS_VARLOG}" "${OPENSEARCH_DASHBOARDS_TMPDIR}")
     for f in "${folders[@]}"; do
         add_folder "${f}" 770
@@ -20,16 +15,11 @@ function create_file_structure () {
 }
 
 
-function set_base_config_props () {
-    set_yaml_prop "${OPENSEARCH_DASHBOARDS_PATH_CONF}/opensearch_dashboards.yml" "path.data" "${OPENSEARCH_DASHBOARDS_VARLIB}"
-}
-
-
 create_file_structure
-set_base_config_props
+seed_config
 
 
-declare -a folders=("${SNAP_DATA}" ${SNAP_COMMON})
+declare -a folders=("${SNAP_DATA}" "${SNAP_COMMON}")
 for f in "${folders[@]}"; do
     chown -R snap_daemon "${f}/"*
     chgrp root "${f}/"*

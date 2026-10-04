@@ -24,46 +24,74 @@ sudo snap install opensearch-dashboards --channel=3/edge
 
 ### Starting OpenSearch Dashboards:
 
+The daemon starts as soon as the snap is installed, connecting to an
+OpenSearch instance on `https://localhost:9200` with the default credentials
+(user: `kibanaserver`, password: `kibanaserver`). Until the OpenSearch CA is
+configured, the OpenSearch certificates are not verified
+(`opensearch.ssl.verificationMode: none`, the upstream default).
+
+The service can be managed with:
+```
+sudo snap stop|start|restart opensearch-dashboards.opensearch-dashboards-daemon
+```
+
 #### Configuration:
 
-All settings are read from the OpenSearch Dashboards configuration file, which
-the install hook seeds into writable snap data:
+The configuration lives in the snap's common data, so it is kept across
+refreshes:
 
 ```
-/var/snap/opensearch-dashboards/current/etc/opensearch-dashboards/opensearch_dashboards.yml
+/var/snap/opensearch-dashboards/common/etc/opensearch-dashboards/opensearch_dashboards.yml
 ```
 
-Edit that file before starting the service. The commonly changed keys are:
+It is changed with the `setup` application, which writes the settings to that
+file and restarts the daemon. Settings are passed as `-E<SETTING>=<VALUE>`,
+where `<SETTING>` follows the upstream OpenSearch Dashboards tarball
+conventions:
 
- - `server.host` -- hostname or IP where the service is exposed (default: `localhost`)
- - `server.port` -- port where the service is exposed (default: `5601`)
- - `opensearch.hosts` -- OpenSearch instance URI to connect to (default: `https://localhost:9200`)
- - `opensearch.username` / `opensearch.password` -- credentials used to
-   authenticate against OpenSearch (default: `kibanaserver` / `kibanaserver`)
+ - a configuration key, as passed to `bin/opensearch-dashboards --<key>=<value>`,
+   e.g. `-Eserver.host=0.0.0.0`
+ - the upstream docker environment variable of that key, e.g.
+   `-ESERVER_HOST=0.0.0.0` or `-EOPENSEARCH_USERNAME=kibanaserver`
+ - the same variable without its `OPENSEARCH_` prefix, e.g. `-EUSERNAME=kibanaserver`
 
-This snap exposes no snap options, so `snap set` has no effect on it: the
-configuration file above is the only place to change settings.
+Two settings are specific to the snap:
 
-#### Starting up the service:
+ - `-EHOSTS=<host> [<host> ...]` -- the OpenSearch hosts (`opensearch.hosts`).
+   Further arguments are added to the list; the scheme defaults to `https://`
+   and the port to `9200`.
+ - `-ECA=<PEM>` -- the CA that signed the OpenSearch HTTP certificates. It is
+   stored in `.../common/etc/opensearch-dashboards/certificates/opensearch-ca.pem`
+   and Dashboards then verifies the OpenSearch certificates against it
+   (`opensearch.ssl.verificationMode: certificate`, unless set otherwise).
 
-The daemon is not started at install time. Once the configuration is in place
-(or if the defaults are acceptable), `opensearch-dashboards` can be started by
-executing the following command
+For example, with the OpenSearch snap installed on the same machine:
 ```
-sudo snap start opensearch-dashboards.opensearch-dashboards-daemon
+sudo opensearch-dashboards.setup \
+    -EHOSTS="localhost" \
+    -ECA="$(sudo cat /var/snap/opensearch/current/etc/opensearch/certificates/root-ca.pem)"
 ```
+
+or against a remote cluster:
+```
+sudo opensearch-dashboards.setup \
+    -EHOSTS="10.0.0.1" "10.0.0.2" "10.0.0.3:9201" \
+    -ECA="$(cat /path/to/root-ca.pem)" \
+    -EUSERNAME=kibanaserver -EPASSWORD=kibanaserver \
+    -ESERVER_HOST=0.0.0.0 \
+    -Eopensearch.ssl.verificationMode=full
+```
+
+Run `opensearch-dashboards.setup --help` for the full usage.
 
 ### Testing the OpenSearch Dashboards setup:
 
-OpenSearch Dashboards is by default started up at http://localhost:5601, with default
-credentials (user: `kibanaserver`, password: `kibanaserver`).
+OpenSearch Dashboards is by default served on http://localhost:5601 (set
+`-ESERVER_HOST=0.0.0.0` to expose it on all interfaces).
 
-If you have an OpenSearch instance running with default settings (https://localhost:9200),
-the Dashboard should be able to automatically connect.
-
-Any other potential connection (or other configuration information) should go into the
-`opensearch_dashboards.yml` file described in
-[Configuration](#configuration) above.
+```
+curl -u kibanaserver:kibanaserver http://localhost:5601/api/status
+```
 
 Logs are written to:
 
