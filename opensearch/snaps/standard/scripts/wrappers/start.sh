@@ -67,6 +67,9 @@ function start_opensearch () {
 
     configure_qat
 
+    # Revert skips post-refresh, so select this revision's bundled CAs before Java starts.
+    bash "${OPS_ROOT}/helpers/refresh-trust-store.sh"
+
     # snap revert does not run post-refresh. Recover missing plugin configuration
     # here, before plugins load, while leaving any existing configuration alone.
     # Use the installer's account so restored files have the same ownership.

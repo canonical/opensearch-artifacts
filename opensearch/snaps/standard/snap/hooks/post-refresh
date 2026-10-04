@@ -136,6 +136,9 @@ function ensure_bin_dir () {
     done
 }
 
+# Restore the active snap's bundled CAs while retaining separately named custom CAs.
+bash "${OPS_ROOT}/helpers/refresh-trust-store.sh" refresh
+
 ensure_plugins_dir
 ensure_bin_dir
 

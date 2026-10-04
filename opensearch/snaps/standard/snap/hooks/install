@@ -75,16 +75,7 @@ function set_base_config_props () {
 
 
 function create_editable_cacerts_trust_store() {
-    # Copy the read only JDK provided cacerts into a writeable one
-    "${JAVA_HOME}"/bin/keytool \
-        -importkeystore                                     \
-        -srckeystore  "${SNAP}/etc/ssl/certs/java/cacerts"  \
-        -destkeystore "${OPENSEARCH_PATH_CERTS}/cacerts.p12" \
-        -srcstoretype   JKS              \
-        -deststoretype  PKCS12           \
-        -srcstorepass   changeit         \
-        -deststorepass  changeit         \
-        -noprompt
+    bash "${OPS_ROOT}/helpers/refresh-trust-store.sh"
 
     # writable by root through the group: sudo opensearch.keytool manages it
     set_access_restrictions "${OPENSEARCH_PATH_CERTS}/cacerts.p12" 660

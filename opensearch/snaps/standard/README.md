@@ -165,6 +165,60 @@ user can still authenticate and access its permitted indices using the new CA.
 If only the node certificate needs renewal, run only the node-certificate command
 above with the existing CA, fix the file permissions, and restart the daemon.
 
+### Java's trusted CAs
+
+The writable Java truststore is
+`/var/snap/opensearch/common/etc/opensearch/certificates/cacerts.p12`.
+Refresh replaces its bundled CA entries with those shipped by the snap's OpenJDK;
+revert restores the previous revision's bundled CAs when the daemon starts.
+The `debian:` alias prefix belongs to the bundle. Manual changes or deletions
+under that prefix are overwritten on refresh. Name custom CAs with the
+`opensearch-custom-` prefix. Import a CA directly from a non-hidden file in your
+home directory after connecting the home interface:
+
+```sh
+sudo snap connect opensearch:home
+sudo opensearch.keytool \
+    -importcert \
+    -alias opensearch-custom-company-root \
+    -file "$HOME/company-root.pem" \
+    -keystore /var/snap/opensearch/common/etc/opensearch/certificates/cacerts.p12 \
+    -storepass changeit
+sudo snap restart opensearch.daemon
+```
+
+Alternatively, pass a CA you already trust through stdin. This needs no home
+interface connection or copying files into the snap's directories:
+
+```sh
+cat company-root.pem | sudo opensearch.keytool -importcert -noprompt \
+    -alias opensearch-custom-company-root \
+    -keystore /var/snap/opensearch/common/etc/opensearch/certificates/cacerts.p12 \
+    -storepass changeit
+sudo snap restart opensearch.daemon
+```
+
+You can also omit `cat company-root.pem |` and append `< company-root.pem`, or
+`<<< "$(cat company-root.pem)"` in Bash. The shell supplies the PEM through stdin;
+keytool does not accept literal PEM contents as a positional argument. Use
+`-noprompt` for these stdin forms because stdin carries the certificate, not
+answers to keytool's confirmation prompt.
+
+To remove a custom CA, use the same keystore with
+`-delete -alias opensearch-custom-company-root`.
+Each trusted alias holds one certificate. Usually only the root CA needs importing;
+the server supplies its intermediates. If you deliberately trust several CAs,
+import each certificate separately, for example as `opensearch-custom-yolo-0`
+and `opensearch-custom-yolo-1`. Passing a whole PEM bundle to one new alias does
+not import every CA. The command keeps native keytool behavior and does not split
+bundles or add the alias prefix automatically.
+
+Custom entries and their deletions survive refresh and revert. Keep this managed
+store's password as `changeit`; separately configured truststores remain your
+responsibility. Finish custom CA edits before starting a refresh or revert.
+Reverting to a snap predating this fix cannot update the shared
+store automatically because its startup script has no update step.
+
 ### Plugin removal and rollback
 
 Plugins bundled with this snap must remain installed. `opensearch.plugin remove`

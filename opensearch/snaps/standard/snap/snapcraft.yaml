@@ -28,6 +28,9 @@ system-usernames:
 
 
 plugs:
+  home:
+    # keytool runs with sudo when updating the cacerts, so it must read user-owned CAs.
+    read: all
   shmem-perf-analyzer:
     interface: shared-memory
     private: true
@@ -239,6 +242,7 @@ apps:
   keytool:
     command: opt/opensearch/keytool-wrapper.sh
     plugs:
+      - home
       - mount-observe
 
 parts:

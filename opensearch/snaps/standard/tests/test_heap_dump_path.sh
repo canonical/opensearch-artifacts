@@ -9,11 +9,12 @@ source_directory="$1"
 test_directory=$(mktemp -d "${SNAP_COMMON}/heap-path-test.XXXXXX")
 trap 'rm -rf -- "${test_directory}"' EXIT
 export OPENSEARCH_PATH_CONF="${test_directory}/config"
+export OPENSEARCH_PATH_CERTS="${OPENSEARCH_PATH_CONF}/certificates"
 export OPENSEARCH_VARLOG="${test_directory}/logs"
 export OPENSEARCH_VARLIB="${test_directory}/data"
 export SNAP_DATA="${test_directory}/revision"
 export SNAP_LOG_DIR="${test_directory}/hook-logs"
-mkdir -p "${OPENSEARCH_PATH_CONF}" "${OPENSEARCH_VARLOG}" \
+mkdir -p "${OPENSEARCH_PATH_CERTS}" "${OPENSEARCH_VARLOG}" \
     "${SNAP_DATA}/usr/share/opensearch/plugins" "${SNAP_DATA}/usr/share/opensearch/bin"
 chmod 770 "${test_directory}" "${OPENSEARCH_PATH_CONF}" "${OPENSEARCH_VARLOG}"
 chown -R snap_daemon:root "${test_directory}"
@@ -59,7 +60,12 @@ cd "${OPENSEARCH_HOME}"
 cat "${test_directory}/first.log"
 grep -q 'Heap dump file created' "${test_directory}/first.log"
 test -s "${OPENSEARCH_VARLOG}/java_heapdump.hprof"
-before=$(sha256sum "${OPENSEARCH_VARLOG}/java_heapdump.hprof")
+# The JVM makes dumps private to snap_daemon; read them as that account too.
+heap_dump_checksum() {
+    "${SNAP}/usr/bin/setpriv" --clear-groups --reuid snap_daemon --regid snap_daemon -- \
+        sha256sum "${OPENSEARCH_VARLOG}/java_heapdump.hprof"
+}
+before=$(heap_dump_checksum)
 
 # A fixed filename retains the first dump instead of accumulating one per crash.
 "${SNAP}/usr/bin/setpriv" --clear-groups --reuid snap_daemon --regid snap_daemon -- \
@@ -67,5 +73,5 @@ before=$(sha256sum "${OPENSEARCH_VARLOG}/java_heapdump.hprof")
     "${expected_option}" "${test_directory}/HeapDumpProbe.java" > "${test_directory}/second.log" 2>&1 && exit 1
 cat "${test_directory}/second.log"
 grep -qi 'File exists' "${test_directory}/second.log"
-test "$(sha256sum "${OPENSEARCH_VARLOG}/java_heapdump.hprof")" = "${before}"
+test "$(heap_dump_checksum)" = "${before}"
 echo 'PASS: actual dump created; a repeated OOM preserves the first dump.'
