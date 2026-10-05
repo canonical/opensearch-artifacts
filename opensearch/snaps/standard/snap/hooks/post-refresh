@@ -4,6 +4,7 @@ set -eux
 
 source "${OPS_ROOT}"/helpers/snap-logger.sh "hook-post-refresh"
 source "${OPS_ROOT}"/helpers/config-location.sh
+source "${OPS_ROOT}"/helpers/set-conf.sh
 
 replace_stale_jars() {
     declare -a common=(modules plugins lib)
@@ -29,5 +30,6 @@ enable_daemon_if_set_up() {
 }
 
 migrate_config_to_common
+replace_in_file "${OPENSEARCH_PATH_CONF}/jvm.options" '^-XX:HeapDumpPath=data$' "-XX:HeapDumpPath=${OPENSEARCH_VARLOG}/java_heapdump.hprof"
 replace_stale_jars
 enable_daemon_if_set_up
