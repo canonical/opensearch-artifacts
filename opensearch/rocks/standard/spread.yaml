@@ -43,7 +43,8 @@ suites:
       rm -f "${CRAFT_ARTIFACT}"
       df -h /
     restore-each: |
-      docker rm -f cm0 data1 cm1 2>/dev/null || true
+      docker rm -f cm0 data1 cm1 weak 2>/dev/null || true
+      docker network rm opensearch-net 2>/dev/null || true
       version="$(cat "${PROJECT_PATH}/rockcraft.yaml" \
         | yq .version | tr -d '"')"
       docker rmi opensearch:"${version}" 2>/dev/null || true
