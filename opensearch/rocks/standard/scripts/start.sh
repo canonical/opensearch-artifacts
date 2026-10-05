@@ -9,7 +9,7 @@ INITIAL_CM_NODES="${INITIAL_CM_NODES:-}"
 NETWORK_HOST="${NETWORK_HOST:-_local_,_site_}"
 SEED_HOSTS="${SEED_HOSTS:-}"
 
-# Generated passwords, readable by the opensearch user only
+# Generated passwords, readable by the _daemon_ user only
 PASSWORDS_FILE="${OPENSEARCH_PATH_CONF}/init_users_pass.yaml"
 
 

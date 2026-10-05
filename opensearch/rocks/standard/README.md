@@ -87,7 +87,7 @@ installs the demo certificates and sets the password of the `admin` user.
 
 The passwords are set on the first start only. The generated ones are stored
 in `/usr/share/opensearch/config/init_users_pass.yaml`, readable by the
-`opensearch` user only, as `<user>: "<password>"` lines:
+`_daemon_` user only, as `<user>: "<password>"` lines:
 
 ```bash
 docker exec <container> cat /usr/share/opensearch/config/init_users_pass.yaml
@@ -108,15 +108,13 @@ The OpenSearch tools (`opensearch-keystore`, `opensearch-plugin`, ...) are on
 the `PATH`, and the security plugin tools (`securityadmin.sh`, `hash.sh`, ...)
 are in `/usr/share/opensearch/plugins/opensearch-security/tools`.
 
-Unlike the upstream image, `docker exec` runs as `root` by default: run the
-tools as the `opensearch` user with `-u opensearch`. Files written as `root`,
-such as the keystore, are owned by `root` and OpenSearch can no longer read
-them, which fails `_nodes/reload_secure_settings` and the next start:
+OpenSearch and `docker exec` both run as the `_daemon_` user (584792:584792),
+so the files the tools write, such as the keystore, stay readable by OpenSearch:
 
 ```bash
-echo "<value>" | docker exec -i -u opensearch <container> \
+echo "<value>" | docker exec -i <container> \
   opensearch-keystore add --stdin <setting>
-docker exec -u opensearch <container> opensearch-keystore list
+docker exec <container> opensearch-keystore list
 ```
 
 ### Testing a multi nodes deployment:
