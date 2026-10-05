@@ -165,7 +165,7 @@ function create_root_certificate () {
             ${KEY_SIZE_BITS}
     fi
 
-    # generate a root certificate
+    # Give new root ceertificates explicit CA signing permissions so strict TLS clients accept them.
     local passin_args=()
     if [ -n "${password}" ]; then
         passin_args=(-passin pass:"${password}")
@@ -178,6 +178,8 @@ function create_root_certificate () {
         -key "${target_dir}/root-ca-key.pem" \
         -out "${target_dir}/root-ca.pem" \
         -subj "${subject}" \
+        -addext "basicConstraints=critical,CA:TRUE" \
+        -addext "keyUsage=critical,keyCertSign,cRLSign" \
         -days ${LIFESPAN_DAYS}
 }
 

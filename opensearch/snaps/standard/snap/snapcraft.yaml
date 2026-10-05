@@ -96,6 +96,9 @@ apps:
     daemon: simple
     install-mode: enable
     command: opt/opensearch/start.sh
+    # Revert skips refresh hooks. Save this revision's plugin configuration when
+    # its service stops, before another revision becomes active.
+    post-stop-command: opt/opensearch/save-plugin-configuration.sh
     restart-condition: always
     restart-delay: 20s
     plugs:

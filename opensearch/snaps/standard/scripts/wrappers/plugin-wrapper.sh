@@ -2,8 +2,8 @@
 
 set -e -o pipefail
 
-# Bundled plugins belong to the snap. Reject removal before the native tool can
-# change their links, files or configuration.
+# Bundled plugins belong to the snap. Reject removal before the native tool or
+# configuration helper can change their links, files or saved configuration.
 check_bundled_removal() {
     local argument subcommand="" parse_options=true setting_value_follows=false
     local plugins_dir shipped_dir target plugin_name
@@ -61,5 +61,7 @@ check_bundled_removal() {
 
 check_bundled_removal "$@"
 
-# Only called from within the snap environment
-exec /snap/opensearch/current/usr/share/opensearch/shipped-bin/opensearch-plugin.orig "${@}"
+# Run the native tool and update this revision's saved configuration after removal.
+# Other revisions keep their own copies for rollback.
+exec "${SNAP}/usr/bin/python3" "${SNAP}/opt/opensearch/helpers/plugin-configuration.py" \
+    run "${SNAP}/usr/share/opensearch/shipped-bin/opensearch-plugin.orig" "${@}"
