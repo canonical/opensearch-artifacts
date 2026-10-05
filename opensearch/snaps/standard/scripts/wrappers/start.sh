@@ -65,6 +65,11 @@ function start_opensearch () {
 
     configure_qat
 
+    # A start interrupted while OpenSearch creates its keystore leaves this file
+    # behind, and every later start then fails on it. No other OpenSearch
+    # process runs at this point.
+    rm -f "${OPENSEARCH_PATH_CONF}/opensearch.keystore.tmp"
+
     # start
     "${SNAP}"/usr/bin/setpriv \
         --clear-groups \

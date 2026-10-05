@@ -8,7 +8,7 @@ Steps to install it locally:
 snapcraft --debug
 
 # install the snap
-sudo snap install opensearch_2.9.6_amd64.snap --dangerous --jailmode
+sudo snap install opensearch_2.19.6_amd64.snap --dangerous --jailmode
 ```
 
 ### Environment configuration:

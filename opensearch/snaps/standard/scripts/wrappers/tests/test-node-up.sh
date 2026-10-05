@@ -7,7 +7,7 @@ usage() {
 cat << EOF
 usage: test-node-up.sh --node-name cm0 --admin-auth-password admin
 Tests if the passed node is up and running.
---node-name             (Optional)  Name of the node to check the status, default "cm0"
+--node-name             (Optional)  Name of the node to check the status, defaults to the configured node.name, else "cm0"
 --admin-auth-password   (Optional)  Password for basic auth with the opensearch rest api, default "admin"
 --help                              Shows help menu
 EOF
@@ -53,7 +53,9 @@ function parse_args () {
 
 function set_defaults () {
     if [ -z "${node_name}" ]; then
-        node_name="cm0"
+        # The configured node name, else the one of the documented setup
+        node_name="$("${SNAP}"/usr/bin/yq -r '."node.name" // empty' "${OPENSEARCH_PATH_CONF}/opensearch.yml" 2>/dev/null || true)"
+        node_name="${node_name:-cm0}"
     fi
 
     if [ -z "${admin_auth_password}" ]; then

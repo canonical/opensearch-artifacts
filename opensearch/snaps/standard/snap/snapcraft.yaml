@@ -120,6 +120,8 @@ apps:
 
   setup:
     command: opt/opensearch/setup.sh
+    plugs:
+      - network
 
   test-cluster-health-green:
     command: opt/opensearch/tests/test-cluster-health-green.sh
@@ -308,11 +310,20 @@ parts:
         release_date="20260810164749"
         archive="opensearch-${version}-${patch}-${release_date}-linux-x64.tar.gz"
       fi
+
       url="https://api.launchpad.net/devel/opensearch-releases/${series}/${version}-${CRAFT_ARCH_BUILD_FOR}-${patch}/files"
-      curl -sk "${url}" \
-        | jq -r '.entries[].file_link' \
-        | sort \
-        | xargs -n1 curl -skL > "${archive}"
+
+      # Use local HTTP cache if available to avoid re-downloading the large tarball
+      cache_url="${OPS_TARBALL_CACHE_URL:-}"
+      if [ -n "${cache_url}" ] && curl -sf --max-time 5 -o "${archive}" "${cache_url}/${archive}"; then
+        echo "Using cached tarball from ${cache_url}/${archive}"
+      else
+        echo "Downloading tarball from Launchpad..."
+        curl -sk "${url}" \
+          | jq -r '.entries[].file_link' \
+          | sort \
+          | xargs -n1 curl -skL > "${archive}"
+      fi
 
       # The archive is output/lp-${Version}/${archive}
       tar -xzvf "${archive}" -C "${CRAFT_PART_INSTALL}/" --strip-components=1
@@ -331,6 +342,13 @@ parts:
            "${CRAFT_PART_INSTALL}/usr/share/opensearch/"
       done
       chmod -R 755 "${CRAFT_PART_INSTALL}/usr/share/opensearch/bin"
+
+      # The snap ships its own JDK (OPENSEARCH_JAVA_HOME): silence the
+      # "no-jdk distributions ... are deprecated" warning of every bin script
+      sed -i 's/^OPENSEARCH_BUNDLED_JDK=false$/OPENSEARCH_BUNDLED_JDK=true/' \
+          "${CRAFT_PART_INSTALL}/usr/share/opensearch/bin/opensearch-env"
+      grep -q '^OPENSEARCH_BUNDLED_JDK=true$' \
+          "${CRAFT_PART_INSTALL}/usr/share/opensearch/bin/opensearch-env"
 
       # Final clean-up
       rm "${archive}"
