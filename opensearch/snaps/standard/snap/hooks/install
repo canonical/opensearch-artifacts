@@ -68,22 +68,14 @@ function set_base_config_props () {
     set_yaml_prop "${OPENSEARCH_PATH_CONF}/opensearch.yml" "path.home" "${OPENSEARCH_HOME}"
 
     replace_in_file "${OPENSEARCH_PATH_CONF}/jvm.options" "=logs/" "=${OPENSEARCH_VARLOG}/"
+    replace_in_file "${OPENSEARCH_PATH_CONF}/jvm.options" '^-XX:HeapDumpPath=data$' "-XX:HeapDumpPath=${OPENSEARCH_VARLOG}/java_heapdump.hprof"
     replace_in_file "${OPENSEARCH_PATH_CONF}/jvm.options" "-javaagent:" "-javaagent:${SNAP_CURRENT}/usr/share/opensearch/"
     echo "-Duser.home=${HOME}" | tee -a "${OPENSEARCH_PATH_CONF}/jvm.options"
 }
 
 
 function create_editable_cacerts_trust_store() {
-    # Copy the read only JDK provided cacerts into a writeable one
-    "${JAVA_HOME}"/bin/keytool \
-        -importkeystore                                     \
-        -srckeystore  "${SNAP}/etc/ssl/certs/java/cacerts"  \
-        -destkeystore "${OPENSEARCH_PATH_CERTS}/cacerts.p12" \
-        -srcstoretype   JKS              \
-        -deststoretype  PKCS12           \
-        -srcstorepass   changeit         \
-        -deststorepass  changeit         \
-        -noprompt
+    bash "${OPS_ROOT}/helpers/refresh-trust-store.sh"
 
     # writable by root through the group: sudo opensearch.keytool manages it
     set_access_restrictions "${OPENSEARCH_PATH_CERTS}/cacerts.p12" 660

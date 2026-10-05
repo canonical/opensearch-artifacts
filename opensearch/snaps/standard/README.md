@@ -49,7 +49,83 @@ sudo snap restart opensearch.daemon
 ```
 Run `sudo snap run opensearch.setup --help` for lists, removing a setting and more examples.
 
+#### Joining an existing cluster:
+
+Installation creates a standalone cluster UUID, even before you store documents.
+OpenSearch cannot merge that identity into another cluster by changing discovery
+settings. Join using a new data directory and keep the original directory intact.
+Its indices will **not** appear in the target cluster; migrate any required data
+separately using snapshot/restore or reindexing.
+
+This example adds a data/ingest node to an existing healthy cluster. Use a
+compatible OpenSearch version, the target's exact cluster name, and reachable
+cluster-manager transport addresses (port 9300 by default). Install any plugins
+required by the target's indices, such as their analysis plugins. Before starting the
+join, arrange a node certificate and matching PKCS#8 private key signed by a CA
+trusted by the target. The certificate must cover this node's hostname/IP and be
+authorized by `plugins.security.nodes_dn` on the other nodes. The joining node
+must likewise trust and authorize the target's node certificates. Independent
+per-node CAs generated on installation do not establish this trust.
+
+First stop the joining node, save its current configuration (including its TLS
+files), and create a fresh data directory. Run the block as one command: `sh -e`
+stops on failure, and `mkdir` without `-p` refuses an existing backup or data path,
+including a symlink. Do not remove an existing directory to make it succeed.
+
+```sh
+sudo sh -eu <<'SH'
+COMMON=/var/snap/opensearch/common
+snap stop --disable opensearch.daemon
+mkdir -m 700 "$COMMON/before-join"
+cp -a "$COMMON/etc/opensearch" "$COMMON/before-join/"
+mkdir -m 770 "$COMMON/var/lib/opensearch-joined"
+chown snap_daemon:root "$COMMON/var/lib/opensearch-joined"
+SH
+```
+
+Provision the target-trusted TLS files under
+`/var/snap/opensearch/common/etc/opensearch/certificates`, owned by
+`snap_daemon:root` with mode `660`. Configure the transport and HTTP certificate,
+key and trusted-CA paths and the peer node DNs using `opensearch.setup -E...`.
+Keep private keys out of shared directories. Do not generate a new independent
+root CA or run `opensearch.security-init`: the target cluster already has its
+security index. See the upstream [TLS configuration](https://docs.opensearch.org/latest/security/configuration/tls/)
+for the certificate settings and requirements.
+
+With TLS configured, replace `logs` and `10.0.0.1` below with the target cluster's
+name and seed address, then configure and start the joining node:
+
+```sh
+sudo snap run opensearch.setup \
+    -Ecluster.name=logs -Enode.roles=data,ingest \
+    -Epath.data=/var/snap/opensearch/common/var/lib/opensearch-joined \
+    -Ediscovery.seed_hosts=10.0.0.1 \
+    -Ecluster.initial_cluster_manager_nodes= \
+    -Eplugins.security.allow_default_init_securityindex=false &&
+sudo snap start --enable opensearch.daemon
+```
+
+Authenticate using the **target cluster's** credentials; this node's install-time
+passwords belong to its retained standalone cluster. Query `GET /` on both nodes
+and confirm identical `cluster_uuid` values, then check `GET /_cluster/health`
+and `GET /_cat/nodes?v` for the expected membership and healthy shard allocation.
+Use the target CA with your client and retain hostname verification. A successful
+TCP connection or a running service alone does not establish that the join worked.
+
+Keep the selected `path.data` for subsequent starts, refreshes and reverts. Do not
+repeat the fresh-directory step on restart. If the join fails, stop the daemon
+and restore the saved configuration and certificates from `before-join/opensearch`
+to return to the original data path and standalone UUID. Keep both data directories;
+do not restore the original configuration on a successfully joined node until it
+has been safely removed from the target cluster. For background, see upstream
+[cluster bootstrapping](https://docs.opensearch.org/latest/tuning-your-cluster/discovery-cluster-formation/bootstrapping/).
+
 #### Replacing the certificates:
+The following replaces the root CA, admin certificate and node certificate for the
+single-node setup above. Clients must trust the new root CA before reconnecting.
+For a multi-node cluster, coordinate CA trust and certificate replacement across
+all nodes; do not generate an independent root CA on each node.
+
 The certificates are generated with the scripts shipped in the snap, run in the snap environment:
 ```
 CERTS=/var/snap/opensearch/common/etc/opensearch/certificates
@@ -72,11 +148,91 @@ private keys (anyone reading the admin key gets full admin access):
 sudo sh -c "chown snap_daemon:root $CERTS/* && chmod 660 $CERTS/*.pem $CERTS/*.srl"
 ```
 
-Then restart the daemon, and re-initialize the security index if the admin certificate changed:
+Then restart the daemon to load the new certificates and settings:
 ```
 sudo snap restart opensearch.daemon
-sudo snap run opensearch.security-init    # --tls-priv-key-admin-pass <pass> for an encrypted admin key
 ```
+
+**Do not run `opensearch.security-init` after certificate rotation, even if the
+admin certificate changed.** It uploads the local seed security configuration and
+can overwrite users, roles and role mappings created through the API. The existing
+security index remains valid after certificate replacement. It does not need to
+be initialized again. See the upstream [securityadmin documentation](https://docs.opensearch.org/latest/security/configuration/security-admin/)
+for details about configuration uploads.
+
+After startup, run the health checks below and verify that an existing API-created
+user can still authenticate and access its permitted indices using the new CA.
+If only the node certificate needs renewal, run only the node-certificate command
+above with the existing CA, fix the file permissions, and restart the daemon.
+
+### Java's trusted CAs
+
+The writable Java truststore is
+`/var/snap/opensearch/common/etc/opensearch/certificates/cacerts.p12`.
+Refresh replaces its bundled CA entries with those shipped by the snap's OpenJDK;
+revert restores the previous revision's bundled CAs when the daemon starts.
+The `debian:` alias prefix belongs to the bundle. Manual changes or deletions
+under that prefix are overwritten on refresh. Name custom CAs with the
+`opensearch-custom-` prefix. Pass the CA through stdin: the shell reads the file,
+so the snap needs no access to its location:
+
+```sh
+cat company-root.pem | sudo opensearch.keytool -importcert -noprompt \
+    -alias opensearch-custom-company-root \
+    -keystore /var/snap/opensearch/common/etc/opensearch/certificates/cacerts.p12 \
+    -storepass changeit
+sudo snap restart opensearch.daemon
+```
+
+You can also omit `cat company-root.pem |` and append `< company-root.pem`, or
+`<<< "$(cat company-root.pem)"` in Bash. The shell supplies the PEM through stdin;
+keytool does not accept literal PEM contents as a positional argument. Use
+`-noprompt` for these stdin forms because stdin carries the certificate, not
+answers to keytool's confirmation prompt.
+
+Alternatively, copy the file into the snap's common directory first and import it with `-file`:
+
+```sh
+sudo cp company-root.pem /var/snap/opensearch/common/
+sudo opensearch.keytool -importcert -noprompt \
+    -alias opensearch-custom-company-root \
+    -file /var/snap/opensearch/common/company-root.pem \
+    -keystore /var/snap/opensearch/common/etc/opensearch/certificates/cacerts.p12 \
+    -storepass changeit
+sudo snap restart opensearch.daemon
+```
+
+To remove a custom CA, use the same keystore with
+`-delete -alias opensearch-custom-company-root`.
+Each trusted alias holds one certificate. Usually only the root CA needs importing;
+the server supplies its intermediates. If you deliberately trust several CAs,
+import each certificate separately, for example as `opensearch-custom-yolo-0`
+and `opensearch-custom-yolo-1`. Passing a whole PEM bundle to one new alias does
+not import every CA. The command keeps native keytool behavior and does not split
+bundles or add the alias prefix automatically.
+
+Custom entries and their deletions survive refresh and revert. Keep this managed
+store's password as `changeit`; separately configured truststores remain your
+responsibility. Finish custom CA edits before starting a refresh or revert.
+Reverting to a snap predating this fix cannot update the shared
+store automatically because its startup script has no update step.
+
+### Plugin removal
+
+Plugins bundled with this snap must remain installed. `opensearch.plugin remove`
+rejects their removal, including with `--purge`, without changing their files or
+configuration. Where a plugin supports disabling features, use its upstream
+settings or API. To choose which plugins are installed, use the
+`opensearch-chiseled` snap instead.
+
+### Heap dumps
+
+On a Java heap exhaustion, the default JVM settings write a dump to
+`/var/snap/opensearch/common/var/log/opensearch/java_heapdump.hprof`.
+This requires enough free disk space. The JVM keeps the first dump and refuses
+to overwrite it; move or remove it after investigation to allow another dump.
+Heap dumps can contain credentials and document contents: keep them private.
+Refresh preserves a custom `-XX:HeapDumpPath` setting in `jvm.options`.
 
 ### Testing the OpenSearch setup:
 You can either consume the REST API yourself or see if the below commands succeed, and you see that the tests `"PASSED"` successfully: 

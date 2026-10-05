@@ -157,7 +157,7 @@ apps:
       - network
       - network-bind
     environment:
-      bin_script: opensearch-plugin.orig
+      bin_script: opensearch-plugin
 
   cli:
     command: opt/opensearch/bin-wrapper.sh

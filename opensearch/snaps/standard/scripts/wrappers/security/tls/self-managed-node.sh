@@ -44,18 +44,24 @@ function parse_args () {
         "sans"
         "rest-with-tls"
         "target-dir"
-        "help"
     )
-    # shellcheck disable=SC2155
-    local opts=$(getopt \
-      --longoptions "$(printf "%s:," "${LONG_OPTS_LIST[@]}")" \
+    local opts
+    opts=$(getopt \
+      --longoptions "$(printf "%s:," "${LONG_OPTS_LIST[@]}")help" \
       --name "$(readlink -f "${BASH_SOURCE}")" \
       --options "" \
       -- "$@"
-    )
+    ) || return $?
     eval set -- "${opts}"
 
     while [ $# -gt 0 ]; do
+        # getopt takes the word after an option as its value, even another option,
+        # e.g. --root-password --help: reject it instead of using it as the value
+        if [[ " ${LONG_OPTS_LIST[*]} " == *" ${1#--} "* && "${2:-}" == --?* &&
+              " help ${LONG_OPTS_LIST[*]} " == *" ${2#--} "* ]]; then
+            echo "Missing value for option '$1'." >&2
+            return 1
+        fi
         case $1 in
             --name) shift
                 name=$1
@@ -80,6 +86,13 @@ function parse_args () {
                 ;;
             --help) usage
                 exit
+                ;;
+            --) shift
+                if [ $# -gt 0 ]; then
+                    echo "Unexpected positional arguments; use named options." >&2
+                    return 1
+                fi
+                break
                 ;;
         esac
         shift
@@ -160,14 +173,32 @@ set_yaml_prop "${opensearch_yaml}" "plugins.security.ssl.transport.pemcert_filep
 set_yaml_prop "${opensearch_yaml}" "plugins.security.ssl.transport.pemkey_filepath" "${target_dir}/node-${name}-key.pem"
 if [ -n "${node_password}" ]; then
     set_yaml_prop "${opensearch_yaml}" "plugins.security.ssl.transport.pemkey_password" "${node_password}"
+else
+    # The new key is unencrypted; a password left by an earlier key prevents startup.
+    remove_yaml_prop "${opensearch_yaml}" "plugins.security.ssl.transport.pemkey_password"
 fi
 
 if [ "${rest_with_tls}" == "yes" ]; then
     set_yaml_prop "${opensearch_yaml}" "plugins.security.ssl.http.pemtrustedcas_filepath" "${target_dir}/root-ca.pem"
     set_yaml_prop "${opensearch_yaml}" "plugins.security.ssl.http.pemcert_filepath" "${target_dir}/node-${name}.pem"
     set_yaml_prop "${opensearch_yaml}" "plugins.security.ssl.http.pemkey_filepath" "${target_dir}/node-${name}-key.pem"
+fi
+
+# HTTP may already use this key even when --rest-with-tls is no. Keep its password
+# in sync whenever its key file changes, but leave a separate HTTP key alone.
+http_key_path=$(get_yaml_prop "${opensearch_yaml}" "plugins.security.ssl.http.pemkey_filepath")
+
+# OpenSearch resolves relative paths from the configuration directory.
+if [[ "${http_key_path}" != /* ]]; then
+    http_key_path="${OPENSEARCH_PATH_CONF}/${http_key_path}"
+fi
+
+# Compare resolved paths so a relative path or symlink still identifies the same key.
+if [ "$(readlink -m "${http_key_path}")" = "$(readlink -m "${target_dir}/node-${name}-key.pem")" ]; then
     if [ -n "${node_password}" ]; then
         set_yaml_prop "${opensearch_yaml}" "plugins.security.ssl.http.pemkey_password" "${node_password}"
+    else
+        remove_yaml_prop "${opensearch_yaml}" "plugins.security.ssl.http.pemkey_password"
     fi
 fi
 
