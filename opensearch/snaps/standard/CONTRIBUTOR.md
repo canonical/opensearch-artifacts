@@ -34,18 +34,29 @@ Now, configuring the required system settings along with connecting the interfac
     ```
 
 ### Set-up an OpenSearch cluster:
-The install hook configures and starts a single node cluster, see the [README](README.md).
-To reconfigure it:
 ```
-sudo snap run opensearch.setup -Ecluster.name=logs -Enode.roles=cluster_manager,data
-sudo snap restart opensearch.daemon
+# create the certificates
+sudo snap run opensearch.setup            \
+    --node-name cm0                       \
+    --node-roles cluster_manager,data     \
+    --tls-priv-key-root-pass root1234     \
+    --tls-priv-key-admin-pass admin1234   \
+    --tls-priv-key-node-pass node1234     \
+    --tls-init-setup yes    # this creates the root and admin certs as well.
+
+# start opensearch
+sudo snap start opensearch.daemon
+
+# initialize the security index
+# should only be called once per cluster, or for rebuilding the security index
+sudo snap run opensearch.security-init --tls-priv-key-admin-pass=admin1234
 ```
 
 ### Test your installation:
 The OpenSearch setup can be tested either in either of the following ways:
 1. Provided [helper script](test-dev-cluster.sh):
     ```
-    bash test-dev-cluster.sh    # --admin-auth-password <password> if not the generated one
+    bash test-dev-cluster.sh
     ```
 2. Manually:
     ```

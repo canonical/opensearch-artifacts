@@ -4,9 +4,9 @@ set -eu
 
 usage() {
 cat << EOF
-usage: test-security-index-created.sh --admin-auth-password <password>
+usage: test-security-index-created.sh --admin-auth-password admin
 Tests if the security index has been successfully created.
---admin-auth-password  (Optional) Password of the admin user, defaults to the one generated on install (root only), else "admin"
+--admin-auth-password  (Optional) Password for basic auth with the opensearch rest api, default "admin"
 --help                 Shows help menu
 EOF
 }
@@ -46,10 +46,7 @@ function parse_args () {
 
 function set_defaults () {
     if [ -z "${admin_auth_password}" ]; then
-        # The password generated on install, else the default of the
-        # revisions that did not generate one
-        admin_auth_password="$(sed -n 's/^admin: "\(.*\)"$/\1/p' "${SNAP_COMMON}/init_users_pass.yaml" 2>/dev/null || true)"
-        admin_auth_password="${admin_auth_password:-admin}"
+        admin_auth_password="admin"
     fi
 }
 

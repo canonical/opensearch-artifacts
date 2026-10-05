@@ -79,10 +79,8 @@ environment:
   OPENSEARCH_PLUGINS: ${OPENSEARCH_HOME}/plugins
   OPENSEARCH_MODULES: ${OPENSEARCH_HOME}/modules
 
-  # Shared by all the revisions. The revisions before it was moved here kept
-  # it in ${SNAP_DATA_CURRENT}/etc/opensearch: it is migrated on refresh.
-  OPENSEARCH_PATH_CONF: ${SNAP_COMMON}/etc/opensearch
-  OPENSEARCH_PATH_CERTS: ${SNAP_COMMON}/etc/opensearch/certificates
+  OPENSEARCH_PATH_CONF: ${SNAP_DATA_CURRENT}/etc/opensearch
+  OPENSEARCH_PATH_CERTS: ${SNAP_DATA_CURRENT}/etc/opensearch/certificates
 
   OPENSEARCH_VARLIB: ${SNAP_COMMON}/var/lib/opensearch
   OPENSEARCH_TMPDIR: ${SNAP_COMMON}/usr/share/tmp
@@ -94,7 +92,7 @@ environment:
 apps:
   daemon:
     daemon: simple
-    install-mode: enable
+    install-mode: disable
     command: opt/opensearch/start.sh
     restart-condition: always
     restart-delay: 20s

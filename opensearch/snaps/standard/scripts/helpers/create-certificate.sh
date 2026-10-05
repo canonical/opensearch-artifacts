@@ -49,17 +49,24 @@ function parse_args () {
         "subject"
         "sans"
         "target-dir"
-        "help"
     )
-    local opts=$(getopt \
-      --longoptions "$(printf "%s:," "${LONG_OPTS_LIST[@]}")" \
+    local opts
+    opts=$(getopt \
+      --longoptions "$(printf "%s:," "${LONG_OPTS_LIST[@]}")help" \
       --name "$(readlink -f "${BASH_SOURCE}")" \
       --options "" \
       -- "$@"
-    )
+    ) || return $?
     eval set -- "${opts}"
 
     while [ $# -gt 0 ]; do
+        # getopt takes the word after an option as its value, even another option,
+        # e.g. --root-password --help: reject it instead of using it as the value
+        if [[ " ${LONG_OPTS_LIST[*]} " == *" ${1#--} "* && "${2:-}" == --?* &&
+              " help ${LONG_OPTS_LIST[*]} " == *" ${2#--} "* ]]; then
+            echo "Missing value for option '$1'." >&2
+            return 1
+        fi
         case $1 in
             --password) shift
                 password=$1
@@ -84,6 +91,13 @@ function parse_args () {
                 ;;
             --help) usage
                 exit
+                ;;
+            --) shift
+                if [ $# -gt 0 ]; then
+                    echo "Unexpected positional arguments; use named options." >&2
+                    return 1
+                fi
+                break
                 ;;
         esac
         shift

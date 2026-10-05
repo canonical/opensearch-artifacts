@@ -56,21 +56,18 @@ function configure_qat() {
 }
 
 function start_opensearch () {
-    # OpenSearch cannot start without it, and its JVM then hangs instead of
-    # exiting: exit so the daemon is restarted, and starts once connected
+    exit_if_missing_perm "log-observe"
     exit_if_missing_perm "mount-observe"
+    exit_if_missing_perm "sys-fs-cgroup-service"
+    exit_if_missing_perm "system-observe"
 
-    warn_if_missing_perm "log-observe"
-    warn_if_missing_perm "sys-fs-cgroup-service"
-    warn_if_missing_perm "system-observe"
-    # This is not autoconnected
     warn_if_missing_perm "process-control"
 
     configure_qat
 
-    # A start interrupted while OpenSearch creates its keystore (e.g. a restart
-    # right after install) leaves this file behind, and every later start then
-    # fails on it. No other OpenSearch process runs at this point.
+    # A start interrupted while OpenSearch creates its keystore leaves this file
+    # behind, and every later start then fails on it. No other OpenSearch
+    # process runs at this point.
     rm -f "${OPENSEARCH_PATH_CONF}/opensearch.keystore.tmp"
 
     # start

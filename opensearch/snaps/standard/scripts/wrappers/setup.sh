@@ -47,8 +47,7 @@ Examples:
       -Ediscovery.seed_hosts=10.0.0.1,10.0.0.2 \\
       -Ecluster.initial_cluster_manager_nodes=node-1
 
-  # node joining another cluster: this node bootstrapped its own cluster on
-  # install, its data must be removed first (see the README)
+  # node joining an already bootstrapped cluster
   setup.sh -Ediscovery.seed_hosts=10.0.0.1 -Ecluster.initial_cluster_manager_nodes=
 EOF
 }
