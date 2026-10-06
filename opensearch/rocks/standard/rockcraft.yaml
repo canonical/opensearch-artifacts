@@ -59,7 +59,7 @@ parts:
   opensearch-snap:
     plugin: nil
     stage-snaps:
-      - opensearch/3/edge/pr-33  # TODO: revert to 3/edge before merging
+      - opensearch/3/edge  
     stage-packages:
       - base-files
       - python3-venv
