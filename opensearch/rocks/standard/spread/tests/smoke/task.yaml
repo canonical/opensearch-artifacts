@@ -3,51 +3,78 @@ summary: OpenSearch Rock Smoke Test
 execute: |
   version="$(cat "${PROJECT_PATH}/rockcraft.yaml" | yq .version | tr -d '"')"
 
-  # Go template used to read a container's IP address.
-  ip_format='{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'
+  # Same contract as the upstream image: the security plugin is enabled
+  # with demo TLS certificates, and the admin password must be strong.
+  admin_password="Sm0ke-Test_Pa55word!"
+  auth=(-u "admin:${admin_password}")
 
-  # create first cm_node container
-  container_0_id=$(docker run \
-      -d --rm -it \
-      -e NODE_NAME=cm0 \
-      -e INITIAL_CM_NODES=cm0 \
-      -p 9200:9200 \
-      --name cm0 \
-      opensearch:"${version}")
-  container_0_ip=$(docker inspect -f "${ip_format}" "${container_0_id}")
+  # A node needs ~30s to answer HTTP even on fast hardware, and longer when
+  # the three nodes start together, so poll for readiness instead of
+  # sleeping a fixed amount. Until the security index
+  # is initialized, the node answers in plain text: ignore jq failures.
+  wait_for_node() {
+      port="$1"
+      name="$2"
+      for _ in $(seq 1 100); do
+          reported="$(curl -sk --max-time 3 "https://127.0.0.1:${port}" \
+              "${auth[@]}" | jq -r '.name // empty' 2>/dev/null || true)"
+          if [ "${reported}" = "${name}" ]; then
+              echo "${name} answered on port ${port}"
+              return 0
+          fi
+          sleep 3
+      done
+      echo "Error: ${name} did not answer on port ${port} within 300s."
+      # skip the errors repeated until the security index is initialized
+      docker logs "${name}" 2>&1 \
+          | grep -vE 'BackendRegistry|ConfigurationLoaderSecurity7' \
+          | tail -n 50 || true
+      return 1
+  }
 
-  # wait a bit for it to fully initialize
-  sleep 30s
+  # Wait until the node on the given port sees the expected nodes.
+  wait_for_nodes() {
+      port="$1"
+      expected="$2"
+      for _ in $(seq 1 100); do
+          nodes="$(curl -sk --max-time 10 \
+              "https://127.0.0.1:${port}/_cat/nodes?h=name" "${auth[@]}" \
+              | sort | paste -sd "," - || true)"
+          if [ "${nodes}" = "${expected}" ]; then
+              return 0
+          fi
+          sleep 3
+      done
+      echo "Error: expected nodes ${expected} on port ${port}, got ${nodes}."
+      return 1
+  }
 
-  # create data/voting_only node container
-  container_1_id=$(docker run \
-      -d --rm -it \
-      -e NODE_NAME=data1 \
-      -e SEED_HOSTS="${container_0_ip}" \
-      -e NODE_ROLES=data,voting_only \
-      -p 9201:9200 \
-      --name data1 \
-      opensearch:"${version}")
-  container_1_ip=$(docker inspect -f "${ip_format}" "${container_1_id}")
+  # The nodes find each other by name on a user-defined network, and all of
+  # them know all the names: any node can rejoin the cluster after a restart.
+  docker network create opensearch-net
+  common=(
+      -d
+      --network opensearch-net
+      -e OPENSEARCH_INITIAL_ADMIN_PASSWORD="${admin_password}"
+      -e SEED_HOSTS=cm0,data1,cm1
+      -e INITIAL_CM_NODES=cm0,data1,cm1
+  )
 
-  # wait a bit for it to fully initialize
-  sleep 30s
+  docker run "${common[@]}" -e NODE_NAME=cm0 \
+      -p 9200:9200 --name cm0 opensearch:"${version}"
+  # voting-only cluster manager: 3 voting nodes, so any one can be lost
+  docker run "${common[@]}" -e NODE_NAME=data1 \
+      -e NODE_ROLES=cluster_manager,data,voting_only \
+      -p 9201:9200 --name data1 opensearch:"${version}"
+  docker run "${common[@]}" -e NODE_NAME=cm1 \
+      -p 9202:9200 --name cm1 opensearch:"${version}"
 
-  # create 2nd cm_node container
-  docker run \
-      -d --rm -it \
-      -e NODE_NAME=cm1 \
-      -e SEED_HOSTS="${container_0_ip},${container_1_ip}" \
-      -e INITIAL_CM_NODES="cm0,cm1" \
-      -p 9202:9200 \
-      --name cm1 \
-      opensearch:"${version}"
-
-  # wait a bit for it to fully initialize
-  sleep 30s
+  wait_for_node 9200 cm0
+  wait_for_node 9201 data1
+  wait_for_node 9202 cm1
 
   # test node
-  cluster_resp=$(curl -sk -XGET http://127.0.0.1:9200)
+  cluster_resp=$(curl -sk -XGET https://127.0.0.1:9200 "${auth[@]}")
   echo -e "Cluster Response: \n ${cluster_resp}"
   node_name=$(echo "${cluster_resp}" | jq -r .name)
   if [ "${node_name}" != "cm0" ]; then
@@ -56,23 +83,62 @@ execute: |
   fi
 
   # query all nodes of cluster
-  successful_nodes="$(curl -sk -XGET http://127.0.0.1:9200/_nodes \
-    | jq ._nodes.successful)"
+  wait_for_nodes 9200 "cm0,cm1,data1"
+  successful_nodes="$(curl -sk -XGET https://127.0.0.1:9200/_nodes \
+    "${auth[@]}" | jq ._nodes.successful)"
   echo "Successful nodes: ${successful_nodes}"
   if [ "${successful_nodes}" != 3 ]; then
       echo "Error: Wrong number of nodes."
       exit 1
   fi
 
-  all_nodes="$(curl -sk -XGET http://127.0.0.1:9200/_nodes/ | \
-    jq '.nodes | values[] | .name' | \
-    jq -s '. |= if . then sort else empty end' | \
-    jq -r '. | values[]' | \
-    paste -sd "," - \
-  )"
-  echo "All nodes: ${all_nodes}"
-  if [ "${all_nodes}" != "cm0,cm1,data1" ]; then
-      echo "Error: Wrong nodes in cluster."
+  # Security must be enforced: no credentials, no answer.
+  anon_status="$(curl -sk -o /dev/null -w '%{http_code}' \
+    https://127.0.0.1:9200)"
+  if [ "${anon_status}" != 401 ]; then
+      echo "Error: anonymous request returned ${anon_status}, expected 401."
+      exit 1
+  fi
+
+  # Plain HTTP must be refused now that TLS is on the REST layer.
+  if curl -s --max-time 3 http://127.0.0.1:9200 >/dev/null; then
+      echo "Error: REST layer still answers over plain HTTP."
+      exit 1
+  fi
+
+  # Like upstream, the node listens on all the interfaces, localhost included.
+  local_status="$(docker exec cm0 curl -sk -o /dev/null -w '%{http_code}' \
+    "${auth[@]}" https://localhost:9200)"
+  if [ "${local_status}" != 200 ]; then
+      echo "Error: localhost request in the container returned ${local_status}."
+      exit 1
+  fi
+
+  # The OpenSearch output is in the container logs.
+  if ! docker logs cm0 2>&1 | grep -q 'started'; then
+      echo "Error: the OpenSearch output is not in the container logs."
+      exit 1
+  fi
+
+  # Losing the first node: the others elect a cluster manager, and the first
+  # node rejoins the cluster once restarted.
+  docker stop cm0
+  wait_for_nodes 9202 "cm1,data1"
+  docker start cm0
+  wait_for_node 9200 cm0
+  wait_for_nodes 9202 "cm0,cm1,data1"
+
+  # A password rejected by the security plugin stops the container, and the
+  # reason is in its logs.
+  docker run -d -e OPENSEARCH_INITIAL_ADMIN_PASSWORD=admin \
+      -e NODE_NAME=weak -e INITIAL_CM_NODES=weak --name weak \
+      opensearch:"${version}"
+  if ! timeout 120 docker wait weak; then
+      echo "Error: the container did not exit on an invalid admin password."
+      exit 1
+  fi
+  if ! docker logs weak 2>&1 | grep -q 'failed validation'; then
+      echo "Error: the password validation failure is not in the logs."
       exit 1
   fi
 

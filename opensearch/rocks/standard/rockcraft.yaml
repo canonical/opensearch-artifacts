@@ -18,8 +18,6 @@ platforms:
   amd64:
   arm64:
 
-run_user: _daemon_
-
 environment:
   OPENSEARCH_HOME: /usr/share/opensearch
 
@@ -30,14 +28,23 @@ environment:
   OPENSEARCH_PLUGINS: /usr/share/opensearch/plugins
   OPENSEARCH_MODULES: /usr/share/opensearch/modules
 
-  OPENSEARCH_PATH_CONF: /etc/opensearch
-  OPENSEARCH_PATH_CERTS: /etc/opensearch/certificates
+  # Align on paths with upstream
+  OPENSEARCH_PATH_CONF: /usr/share/opensearch/config
+  OPENSEARCH_PATH_CERTS: /usr/share/opensearch/config/certificates
 
-  OPENSEARCH_VARLIB: /var/lib/opensearch
+  OPENSEARCH_PATH_DATA: /usr/share/opensearch/data
   OPENSEARCH_TMPDIR: /usr/share/tmp
-  OPENSEARCH_VARLOG: /var/log/opensearch
+  OPENSEARCH_PATH_LOGS: /usr/share/opensearch/logs
 
   KNN_LIB_DIR: /usr/share/opensearch/plugins/opensearch-knn/lib
+
+  # Align with upstream: expose the OpenSearch and JDK tools
+  # (opensearch-keystore, opensearch-plugin, keytool...) on the PATH.
+  PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\
+    /usr/lib/jvm/java-21-openjdk/bin:/usr/share/opensearch/bin"
+
+  # Like upstream, print the OpenSearch output in the container logs
+  PEBBLE_VERBOSE: "1"
 
 services:
   opensearch:
@@ -45,10 +52,29 @@ services:
     startup: enabled
     summary: Start OpenSearch
     command: "/bin/bash /bin/start.sh"
+    user: opensearch
+    group: opensearch
+    working-dir: /usr/share/opensearch
+    # Like upstream, the container exits when OpenSearch fails (e.g. on an
+    # invalid initial admin password) instead of restarting it in a loop:
+    # the restart is left to the container runtime.
+    on-failure: shutdown
 
 parts:
+  user:
+    plugin: nil
+    overlay-script: |
+      # The Ubuntu base already keeps an account at 1000:1000.
+      userdel --root "${CRAFT_OVERLAY}" --force ubuntu 2>/dev/null || true
+      groupdel --root "${CRAFT_OVERLAY}" ubuntu 2>/dev/null || true
+
+      groupadd --root "${CRAFT_OVERLAY}" -r opensearch --gid=1000
+      useradd --root "${CRAFT_OVERLAY}" -r -g opensearch --uid=1000 \
+        --home-dir /usr/share/opensearch --shell /bin/bash opensearch
+
   opensearch-snap:
     plugin: nil
+    after: [user]
     stage-snaps:
       - opensearch/2/edge
     stage-packages:
@@ -63,8 +89,14 @@ parts:
       craftctl default
 
       # opensearch
-      mkdir -p data
+      mkdir -p usr/share/opensearch/data
+      mkdir -p usr/share/opensearch/logs
       mkdir -p extensions
+
+      # The official image keeps the configuration inside OPENSEARCH_HOME;
+      # the snap stages it under /etc/opensearch.
+      mv "${CRAFT_PRIME}/etc/opensearch" \
+          "${CRAFT_PRIME}/usr/share/opensearch/config"
 
       # enable security monitoring
       rocks=usr/share/rocks/
@@ -94,7 +126,7 @@ parts:
       # Remove plugins not shipped in the standard rock using the
       # official opensearch-plugin utility.
       export JAVA_HOME="${CRAFT_PRIME}/usr/lib/jvm/java-21-openjdk"
-      export OPENSEARCH_PATH_CONF="${CRAFT_PRIME}/etc/opensearch"
+      export OPENSEARCH_PATH_CONF="${CRAFT_PRIME}/usr/share/opensearch/config"
 
       declare -a plugins_to_remove=(
           "repository-s3"
@@ -116,30 +148,24 @@ parts:
     override-prime: |
       craftctl default
 
-      # --- Daemon user ---
-      # Pebble's run_user requires a named user in /etc/passwd, not just a UID.
-      if ! id -u _daemon_ >/dev/null 2>&1; then
-        groupadd -g 584792 _daemon_ || true
-        useradd -u 584792 -g 584792 -r -s /bin/false _daemon_ || true
-      fi
-
       # --- Directory permissions ---
-      mkdir -p /var/lib/opensearch /usr/share/tmp /var/log/opensearch
-      mkdir -p /etc/opensearch/certificates
-      install -d -o 584792 -g 584792 -m 770 \
-          "${CRAFT_PRIME}/etc/opensearch" \
-          "${CRAFT_PRIME}/opt/opensearch" \
-          "${CRAFT_PRIME}/usr/share/opensearch" \
-          "${CRAFT_PRIME}/var/lib/opensearch" \
-          "${CRAFT_PRIME}/usr/share/tmp" \
-          "${CRAFT_PRIME}/var/log/opensearch" \
-          "${CRAFT_PRIME}/etc/opensearch/certificates"
+      for dir in opt/opensearch \
+                 usr/share/opensearch \
+                 usr/share/opensearch/config \
+                 usr/share/opensearch/data \
+                 usr/share/opensearch/logs \
+                 usr/share/tmp \
+                 usr/share/opensearch/config/certificates; do
+          mkdir -p "${CRAFT_PRIME}/${dir}"
+          chmod 770 "${CRAFT_PRIME}/${dir}"
+          chown 1000:1000 "${CRAFT_PRIME}/${dir}"
+      done
 
       # --- k-NN native libraries ---
       KNN_LIB_DIR="/usr/share/opensearch/plugins/opensearch-knn/lib"
       PRIME_KNN_LIB_DIR="${CRAFT_PRIME}${KNN_LIB_DIR}"
 
-      chown -R 584792:584792 "${PRIME_KNN_LIB_DIR}"
+      chown -R 1000:1000 "${PRIME_KNN_LIB_DIR}"
       find "${PRIME_KNN_LIB_DIR}" -type d -exec chmod 755 {} \;
       find "${PRIME_KNN_LIB_DIR}" -type f -name '*.so*' -exec chmod 755 {} \;
 
@@ -152,8 +178,18 @@ parts:
            "${CRAFT_PRIME}/usr/lib/"
       done
 
+      # --- Security plugin demo configuration ---
+      # install_demo_configuration.sh drops securityadmin_demo.sh in here
+      # on first start, as uid 1000.
+      SECURITY_TOOLS_DIR="${CRAFT_PRIME}/usr/share/opensearch/plugins/opensearch-security/tools"
+      chown 1000:1000 "${SECURITY_TOOLS_DIR}"
+      chmod 755 "${SECURITY_TOOLS_DIR}"
+      # Like upstream, make the security tools (securityadmin.sh, hash.sh,
+      # audit_config_migrater.sh...) executable.
+      chmod 755 "${SECURITY_TOOLS_DIR}"/*
+
       # --- CA truststore ---
-      CONTAINER_CONF_DIR="/etc/opensearch"
+      CONTAINER_CONF_DIR="/usr/share/opensearch/config"
       PRIME_CONF_DIR="${CRAFT_PRIME}${CONTAINER_CONF_DIR}"
       CACERTS_DEST="${PRIME_CONF_DIR}/certificates/cacerts.p12"
       PRIME_JAVA_HOME="${CRAFT_PRIME}/usr/lib/jvm/java-21-openjdk"
@@ -179,14 +215,23 @@ parts:
        >> "${JVM_OPTS}"
       echo "-Djavax.net.ssl.trustStorePassword=changeit" >> "${JVM_OPTS}"
       echo "-Djava.library.path=${JAVA_LIBRARY_PATH}" >> "${JVM_OPTS}"
-      chown -R 584792:584792 "${PRIME_CONF_DIR}"
+      chown -R 1000:1000 "${PRIME_CONF_DIR}"
+
+      # OpenSearch writes its keystore into the configuration directory on
+      # startup, and its data and logs into the two below, all as uid 1000.
+      chown -R 1000:1000 \
+          "${CRAFT_PRIME}/usr/share/opensearch/data" \
+          "${CRAFT_PRIME}/usr/share/opensearch/logs"
 
   entry:
     plugin: dump
+    after: [non-root-user]
     source: scripts
     organize:
       start.sh: usr/bin/start.sh
       set_conf.py: usr/bin/set_conf.py
+      init_users.py: usr/bin/init_users.py
     stage:
       - usr/bin/start.sh
       - usr/bin/set_conf.py
+      - usr/bin/init_users.py

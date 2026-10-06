@@ -62,63 +62,142 @@ rockcraft.skopeo --insecure-policy \
 
 docker run \
   -d --rm -it \
+  -e OPENSEARCH_INITIAL_ADMIN_PASSWORD="<strong-password>" \
   -e NODE_NAME=cm0 \
   -e INITIAL_CM_NODES=cm0 \
   -p 9200:9200 \
   --name cm0 \
   opensearch:"${version}"
+
+curl -k -u admin:"<strong-password>" https://localhost:9200
+```
+
+`OPENSEARCH_INITIAL_ADMIN_PASSWORD` is optional: without it, a password is
+generated (see [Security](#security)).
+
+### Configuration
+
+| Variable | Description |
+|---|---|
+| `CLUSTER_NAME` | Name of the cluster. Default: `opensearch-dev`. |
+| `NODE_NAME` | Name of the node. Default: `node-0`. |
+| `NODE_ROLES` | Comma separated roles of the node. Default: `cluster_manager,data`. |
+| `INITIAL_CM_NODES` | Comma separated names of the cluster manager eligible nodes that bootstrap a new cluster. |
+| `SEED_HOSTS` | Comma separated addresses or names of the nodes to discover the cluster from. |
+| `NETWORK_HOST` | Comma separated addresses the node binds to (`network.host`). Default: `0.0.0.0`, like upstream. |
+
+Any other OpenSearch setting can be passed as an environment variable named
+after it, like with the upstream image, e.g. `-e cluster.routing.allocation.disk.threshold_enabled=false`.
+
+When OpenSearch fails, e.g. on an invalid configuration, the container exits
+instead of restarting it: use a restart policy (`--restart`) to restart it.
+
+### Security
+
+Like the upstream `opensearchproject/opensearch` image, the rock starts with the
+security plugin enabled and TLS on both the transport and REST layers. On first
+start it runs the security plugin's `install_demo_configuration.sh`, which
+installs the demo certificates and sets the password of the `admin` user.
+
+| Variable | Description |
+|---|---|
+| `OPENSEARCH_INITIAL_ADMIN_PASSWORD` | Password of the `admin` user. Generated when not set. It must follow the [password format](#password-format). |
+| `OPENSEARCH_INITIAL_<USER>_PASSWORD` | Password of the other users of the demo configuration: `ANOMALYADMIN`, `KIBANARO`, `KIBANASERVER`, `LOGSTASH`, `READALL`, `SNAPSHOTRESTORE`, e.g. `OPENSEARCH_INITIAL_KIBANASERVER_PASSWORD`. Generated when not set. It should follow the [password format](#password-format) too. |
+| `DISABLE_INSTALL_DEMO_CONFIG` | Set to `true` to skip the demo configuration, e.g. when you mount your own certificates and security configuration. |
+| `DISABLE_SECURITY_PLUGIN` | Set to `true` to start OpenSearch with the security plugin disabled (plain HTTP, no authentication). The demo configuration is then skipped and no password is needed. |
+
+#### Password format
+
+The security plugin validates the admin password, like in the upstream image.
+It must:
+
+- be between 8 and 100 characters long,
+- contain at least one uppercase letter, one lowercase letter, one digit and
+  one special character,
+- be rated strong by [zxcvbn](https://lowe.github.io/tryzxcvbn),
+  which rejects common words and patterns, e.g. `Passw0rd!`,
+- not be similar to the user name, e.g. `Adm1n-Something!`.
+
+Otherwise, OpenSearch does not start and the container exits. The reason is in
+the logs, which also print the rejected password:
+
+```
+Password <password> failed validation: "Password is similar to user name". Please re-try with a minimum 8 character password and must contain at least one uppercase letter, one lowercase letter, one digit, and one special character that is strong. ...
+```
+
+The passwords of the other users are not validated on startup. Once the
+cluster is up, the security plugin validates the passwords changed through its
+REST API with its `plugins.security.restapi.password_*` settings.
+
+The passwords are set on the first start only. The generated ones are stored
+in `/usr/share/opensearch/config/init_users_pass.yaml`, readable by the
+`opensearch` user only, as `<user>: "<password>"` lines:
+
+```bash
+docker exec <container> cat /usr/share/opensearch/config/init_users_pass.yaml
+```
+
+The users are stored in the security index of the cluster, created by the first
+node: in a multi-node cluster, the passwords of that node apply to all of them.
+Passing the same passwords to every node, as in the example below, avoids
+looking them up.
+
+The demo certificates are the same on every node, which lets a multi-node
+cluster form out of the box, but their private keys are public: do not use them
+in production.
+
+### Running the OpenSearch tools
+
+The OpenSearch tools (`opensearch-keystore`, `opensearch-plugin`, ...) are on
+the `PATH`, and the security plugin tools (`securityadmin.sh`, `hash.sh`, ...)
+are in `/usr/share/opensearch/plugins/opensearch-security/tools`.
+
+Unlike the upstream image, `docker exec` runs as `root` by default: run the
+tools as the `opensearch` user with `-u opensearch`.
+
+```bash
+echo "<value>" | docker exec -i -u opensearch <container> \
+  opensearch-keystore add --stdin <setting>
+docker exec -u opensearch <container> opensearch-keystore list
 ```
 
 ### Testing a multi nodes deployment:
+
+The nodes find each other by name on a user-defined network. Every node is
+given all the node names in `SEED_HOSTS`, so that any of them, including the
+first one, can rejoin the cluster after a restart. `data1` is a voting-only
+cluster manager eligible node: with 3 voting nodes, the cluster keeps a cluster
+manager when any one of them is down.
+
 ```
-# create first cm_node container
-container_0_id=$(docker run \
-  -d --rm -it \
-  -e NODE_NAME=cm0 \
-  -e INITIAL_CM_NODES=cm0 \
-  -p 9200:9200 \
-  --name cm0 \
-  opensearch:"${version}")
-container_0_ip=$(docker inspect -f '{{ .NetworkSettings.IPAddress }}' "${container_0_id}")
+docker network create opensearch-net
 
-# wait a bit for it to fully initialize
-sleep 15s
+common=(
+  -d --rm
+  --network opensearch-net
+  -e OPENSEARCH_INITIAL_ADMIN_PASSWORD="<strong-password>"
+  -e SEED_HOSTS=cm0,data1,cm1
+  -e INITIAL_CM_NODES=cm0,data1,cm1
+)
 
-# create data/voting_only node container
-container_1_id=$(docker run \
-    -d --rm -it \
-    -e NODE_NAME=data1 \
-    -e SEED_HOSTS="${container_0_ip}" \
-    -e NODE_ROLES=data,voting_only \
-    -p 9201:9200 \
-    --name data1 \
-    opensearch:"${version}")
-container_1_ip=$(docker inspect -f '{{ .NetworkSettings.IPAddress }}' "${container_1_id}")
+docker run "${common[@]}" -e NODE_NAME=cm0 \
+  -p 9200:9200 --name cm0 opensearch:"${version}"
 
-# wait a bit for it to fully initialize
-sleep 15s
+docker run "${common[@]}" -e NODE_NAME=data1 \
+  -e NODE_ROLES=cluster_manager,data,voting_only \
+  -p 9201:9200 --name data1 opensearch:"${version}"
 
-# create 2nd cm_node container
-container_2_id=$(docker run \
-    -d --rm -it \
-    -e NODE_NAME=cm1 \
-    -e SEED_HOSTS="${container_0_ip},${container_1_ip}" \
-    -e INITIAL_CM_NODES="cm0,cm1" \
-    -p 9202:9200 \
-    --name cm1 \
-    opensearch:"${version}")
-
-# wait a bit for it to fully initialize
-sleep 15s
+docker run "${common[@]}" -e NODE_NAME=cm1 \
+  -p 9202:9200 --name cm1 opensearch:"${version}"
 ```
 
 You now can query the nodes:
 ```
-curl -X GET http://127.0.1.1:9200/_nodes/
+curl -k -u admin:"<strong-password>" -X GET https://127.0.0.1:9200/_cat/nodes
 ```
 And expect to see 3 nodes.
 
-**NOTE:** This deployment IS NOT suitable for production AS IS. As this deployment disables and does NOT configure the security of OpenSearch. Please use it as part of the Juju OpenSearch K8s charm once ready.
+**NOTE:** This deployment IS NOT suitable for production AS IS, as it secures OpenSearch with the publicly known demo certificates. Please use it as part of the Juju OpenSearch K8s charm once ready.
 
 ## License
 The OpenSearch rock is free software, distributed under the Apache
