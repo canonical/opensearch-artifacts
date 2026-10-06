@@ -212,6 +212,7 @@ apps:
     plugs:
       - network
       - network-bind
+      - mount-observe
     environment:
       bin_script: opensearch-shard
 
