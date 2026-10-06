@@ -117,6 +117,21 @@ echo "<value>" | docker exec -i <container> \
 docker exec <container> opensearch-keystore list
 ```
 
+### Heap dumps
+
+On a Java heap exhaustion, OpenSearch writes a heap dump to
+`/usr/share/opensearch/data/java_heapdump.hprof`, next to the indices: mount a
+volume on the data directory to keep it when the container is recreated. The
+JVM keeps the first dump and refuses to overwrite it, so restarts on repeated
+out of memory errors cannot fill the disk: copy it out and remove it after
+investigation to allow another one. A dump is as large as the heap and can
+contain credentials and document contents: keep it private.
+
+```bash
+docker cp <container>:/usr/share/opensearch/data/java_heapdump.hprof .
+docker exec <container> rm /usr/share/opensearch/data/java_heapdump.hprof
+```
+
 ### Testing a multi nodes deployment:
 
 ```

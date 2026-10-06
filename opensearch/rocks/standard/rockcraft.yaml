@@ -198,6 +198,11 @@ parts:
       echo "-Djavax.net.ssl.trustStore=${TRUSTSTORE}" >> "${JVM_OPTS}"
       echo "-Djavax.net.ssl.trustStorePassword=changeit" >> "${JVM_OPTS}"
       echo "-Djava.library.path=${JAVA_LIBRARY_PATH}" >> "${JVM_OPTS}"
+
+      HEAP_DUMP="/usr/share/opensearch/data/java_heapdump.hprof"
+      sed -i "s@^-XX:HeapDumpPath=data\$@-XX:HeapDumpPath=${HEAP_DUMP}@" \
+          "${JVM_OPTS}"
+      grep -qx -- "-XX:HeapDumpPath=${HEAP_DUMP}" "${JVM_OPTS}"
       chown -R 584792:584792 "${PRIME_CONF_DIR}"
 
       # OpenSearch writes its keystore into the configuration directory on
