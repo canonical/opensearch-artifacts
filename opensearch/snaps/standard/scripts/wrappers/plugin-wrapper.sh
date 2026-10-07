@@ -61,9 +61,6 @@ check_bundled_removal() {
 
 check_bundled_removal "$@"
 
-if [ -z "${OPENSEARCH_JAVA_OPTS:-}" ]; then
-    export OPENSEARCH_JAVA_OPTS="-Xms1g -Xmx1g"
-fi
 
 # Run the native tool and update this revision's saved configuration after removal.
 # Other revisions keep their own copies for rollback. The root group is needed:
