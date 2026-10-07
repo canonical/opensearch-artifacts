@@ -13,13 +13,23 @@ usage: sudo ${SNAP_INSTANCE_NAME}.setup [-E<SETTING>=<VALUE> ...] [HOST ...]
 Configures OpenSearch Dashboards and restarts it. Settings are written to:
   ${OSD_CONF_FILE}
 
-<SETTING> follows the upstream OpenSearch Dashboards tarball conventions:
-  - a configuration key, as passed to bin/opensearch-dashboards --<key>=<value>
-      e.g. -Eserver.host=0.0.0.0 -Eopensearch.ssl.verificationMode=full
-  - the upstream docker environment variable of a key
-      e.g. -ESERVER_HOST=0.0.0.0 -EOPENSEARCH_USERNAME=kibanaserver
-  - the same variable without its OPENSEARCH_ prefix
-      e.g. -EUSERNAME=kibanaserver -EPASSWORD=kibanaserver
+<SETTING> is one of the following upstream configuration keys, its upstream
+docker environment variable, or that variable without its OPENSEARCH_ prefix:
+
+  key                                       short name
+  opensearch.hosts                          HOSTS (see below)
+  opensearch.username                       USERNAME
+  opensearch.password                       PASSWORD
+  opensearch.ssl.verificationMode           SSL_VERIFICATIONMODE
+  opensearch.requestTimeout                 REQUESTTIMEOUT
+  server.host                               SERVER_HOST
+  server.port                               SERVER_PORT
+  server.name                               SERVER_NAME
+  server.basePath                           SERVER_BASEPATH
+  opensearch_security.multitenancy.enabled  OPENSEARCH_SECURITY_MULTITENANCY_ENABLED
+
+e.g. -Eserver.host=0.0.0.0, -ESERVER_HOST=0.0.0.0 or -EUSERNAME=kibanaserver.
+Any other setting is edited directly in the configuration file.
 
 Special settings:
   -EHOSTS=<host> [<host> ...]
@@ -30,10 +40,13 @@ Special settings:
         PEM content of the CA that signed the OpenSearch HTTP certificates,
         e.g. -ECA="\$(cat /path/to/root-ca.pem)". It is stored in
         ${OSD_CA_FILE} and trusted for
-        connections to OpenSearch (verificationMode "certificate" unless set).
+        connections to OpenSearch (verificationMode "full" unless set: the
+        OpenSearch certificates must also be valid for the hosts used).
 
-Values are written as strings, except true/false, integers and [a, b] lists.
-Wrap a value in double quotes to force a string, e.g. -EPASSWORD='"1234"'.
+As in the OpenSearch snap, the value is written as is, as a string: OpenSearch
+Dashboards converts it to the type of the setting, e.g. -ESERVER_PORT=5602.
+A value in brackets is a YAML list. An empty value removes the setting,
+e.g. -ESERVER_NAME=
 
   -h, --help    Shows this help menu
 EOF
@@ -46,110 +59,56 @@ function die () {
 }
 
 
-# Upstream settings exposed as environment variables by the docker image
-# (src/dev/build/tasks/os_packages/docker_generator/.../opensearch-dashboards-docker),
-# completed with the security plugin settings shipped in the default config.
+# The most used settings, see the upstream opensearch_dashboards.yml. Others
+# are edited directly in the configuration file.
 OSD_SETTINGS=(
-    console.enabled console.proxyConfig console.proxyFilter
-    ops.cGroupOverrides.cpuPath ops.cGroupOverrides.cpuAcctPath
-    cpu.cgroup.path.override cpuacct.cgroup.path.override
-    csp.rules csp.strict csp.warnLegacyBrowsers
-    data.search.usageTelemetry.enabled
-    opensearch.customHeaders opensearch.hosts opensearch.logQueries
-    opensearch.memoryCircuitBreaker.enabled
-    opensearch.memoryCircuitBreaker.maxPercentage
-    opensearch.password opensearch.pingTimeout
-    opensearch.requestHeadersWhitelist opensearch.requestTimeout
-    opensearch.shardTimeout opensearch.sniffInterval
-    opensearch.sniffOnConnectionFault opensearch.sniffOnStart
-    opensearch.ssl.alwaysPresentCertificate opensearch.ssl.certificate
-    opensearch.ssl.certificateAuthorities opensearch.ssl.key
-    opensearch.ssl.keyPassphrase opensearch.ssl.keystore.path
-    opensearch.ssl.keystore.password opensearch.ssl.truststore.path
-    opensearch.ssl.truststore.password opensearch.ssl.verificationMode
-    opensearch.username opensearch.disablePrototypePoisoningProtection
-    i18n.locale interpreter.enableInVisualize
-    opensearchDashboards.autocompleteTerminateAfter
-    opensearchDashboards.autocompleteTimeout
-    opensearchDashboards.defaultAppId opensearchDashboards.index
-    logging.dest logging.ignoreEnospcError logging.json logging.quiet
-    logging.rotate.enabled logging.rotate.everyBytes logging.rotate.keepFiles
-    logging.rotate.pollingInterval logging.rotate.usePolling logging.silent
-    logging.useUTC logging.verbose
-    map.includeOpenSearchMapsService map.proxyOpenSearchMapsServiceInMaps
-    map.regionmap map.tilemap.options.attribution map.tilemap.options.maxZoom
-    map.tilemap.options.minZoom map.tilemap.options.subdomains map.tilemap.url
-    migrations.delete.enabled migrations.delete.types
-    newsfeed.enabled ops.interval path.data pid.file regionmap
-    security.showInsecureClusterWarning
-    server.basePath server.compression.enabled
-    server.compression.referrerWhitelist server.cors server.cors.origin
-    server.defaultRoute server.host server.keepAliveTimeout
-    server.maxPayloadBytes server.name server.port server.rewriteBasePath
-    server.socketTimeout server.ssl.cert server.ssl.certificate
-    server.ssl.certificateAuthorities server.ssl.cipherSuites
-    server.ssl.clientAuthentication server.customResponseHeaders
-    server.ssl.enabled server.ssl.key server.ssl.keyPassphrase
-    server.ssl.keystore.path server.ssl.keystore.password
-    server.ssl.truststore.path server.ssl.truststore.password
-    server.ssl.redirectHttpFromPort server.ssl.supportedProtocols
-    server.xsrf.disableProtection server.xsrf.whitelist
-    status.allowAnonymous status.v6ApiFormat
-    telemetry.allowChangingOptInStatus telemetry.enabled telemetry.optIn
-    telemetry.optInStatusUrl telemetry.sendUsageFrom
-    vega.enableExternalUrls vis_builder.enabled
-    data_source.enabled data_source.audit.enabled
-    opensearch_security.auth.type
-    opensearch_security.cookie.secure
+    opensearch.hosts
+    opensearch.username
+    opensearch.password
+    opensearch.ssl.verificationMode
+    opensearch.requestTimeout
+    server.host
+    server.port
+    server.name
+    server.basePath
     opensearch_security.multitenancy.enabled
-    opensearch_security.multitenancy.tenants.preferred
-    opensearch_security.readonly_mode.roles
 )
 
 
-# Resolve a -E name into a configuration key.
+# Resolve a -E name into a configuration key: the key itself, its upstream
+# docker environment variable (opensearch.hosts -> OPENSEARCH_HOSTS), or the
+# latter without its OPENSEARCH_ prefix.
 function resolve_key () {
     local name="${1}"
-    local candidate
+    local key name_env
 
-    # A configuration key, used verbatim like the upstream --<key>=<value>.
-    if [[ "${name}" == *.* ]]; then
-        echo "${name}"
-        return
-    fi
-
-    for candidate in "${name}" "OPENSEARCH_${name}"; do
-        for key in "${OSD_SETTINGS[@]}"; do
-            if [ "$(echo "${key^^}" | tr . _)" == "${candidate}" ]; then
-                echo "${key}"
-                return
-            fi
-        done
+    for key in "${OSD_SETTINGS[@]}"; do
+        if [ "${key}" == "${name}" ]; then
+            echo "${key}"
+            return
+        fi
+        name_env="$(echo "${key^^}" | tr . _)"
+        if [ "${name_env}" == "${name}" ] || \
+                [ "${name_env}" == "OPENSEARCH_${name}" ]; then
+            echo "${key}"
+            return
+        fi
     done
 
-    die "unknown setting '${name}', see --help"
+    die "unsupported setting '${name}', see --help"
 }
 
 
-# Convert a command line value into JSON, mirroring the yaml typing.
-function to_json () {
-    local value="${1}"
-    local elements=()
-    local element
+# As in the OpenSearch snap, a value in brackets is a YAML list, converted
+# here to JSON for jq.
+function yaml_list_to_json () {
+    local key="${1}" value="${2}" json
 
-    if [[ "${value}" =~ ^\"(.*)\"$ ]]; then
-        jq -n --arg v "${BASH_REMATCH[1]}" '$v'
-    elif [[ "${value}" =~ ^(true|false|-?[0-9]+)$ ]]; then
-        echo "${value}"
-    elif [[ "${value}" =~ ^\[(.*)\]$ ]]; then
-        IFS=',' read -r -a elements <<< "${BASH_REMATCH[1]}"
-        for element in "${elements[@]}"; do
-            element="$(echo "${element}" | xargs)"
-            [ -n "${element}" ] && to_json "${element}"
-        done | jq -s -c '.'
-    else
-        jq -n --arg v "${value}" '$v'
+    if ! json="$(printf '%s' "${value}" | "${SNAP}"/usr/bin/yq -c '.' 2>/dev/null)" \
+            || [ "$(printf '%s' "${json}" | jq -r 'type')" != "array" ]; then
+        die "'${value}' of ${key} is not a valid YAML list"
     fi
+    echo "${json}"
 }
 
 
@@ -193,8 +152,7 @@ function add_hosts () {
 
 
 # Args
-declare -A settings=()
-declare -a settings_order=()
+declare -a keys=() kinds=() values=()
 declare -a opensearch_hosts=()
 hosts_set="no"
 ca_content=""
@@ -232,8 +190,16 @@ function add_setting () {
         fi
         add_hosts "${value}"
     else
-        [ -n "${settings[${key}]+x}" ] || settings_order+=("${key}")
-        settings["${key}"]="$(to_json "${value}")"
+        keys+=("${key}")
+        if [ -z "${value}" ]; then
+            kinds+=("remove")
+        elif [[ "${value}" == \[*\] ]]; then
+            kinds+=("list")
+            value="$(yaml_list_to_json "${key}" "${value}")"
+        else
+            kinds+=("string")
+        fi
+        values+=("${value}")
     fi
     last_key="${key}"
 }
@@ -280,7 +246,9 @@ function install_ca () {
     tmp_ca="$(mktemp -p "${OPENSEARCH_DASHBOARDS_PATH_CERTS}")"
     printf '%s\n' "${ca_content}" > "${tmp_ca}"
 
-    if ! openssl x509 -in "${tmp_ca}" -noout 2>/dev/null; then
+    # Only parse the certificate: the system CA bundle, which openssl loads by
+    # default, is unused and not readable by this app.
+    if ! SSL_CERT_FILE=/dev/null openssl x509 -in "${tmp_ca}" -noout 2>/dev/null; then
         rm -f "${tmp_ca}"
         die "-ECA is not a valid PEM certificate"
     fi
@@ -288,36 +256,37 @@ function install_ca () {
     mv "${tmp_ca}" "${OSD_CA_FILE}"
     set_access_restrictions "${OSD_CA_FILE}" 660
     echo "Stored the OpenSearch CA in ${OSD_CA_FILE}:"
-    openssl x509 -in "${OSD_CA_FILE}" -noout -subject -enddate
+    SSL_CERT_FILE=/dev/null openssl x509 -in "${OSD_CA_FILE}" -noout -subject -enddate
 }
 
 
 function write_config () {
-    local tmp_conf key mode
+    local tmp_conf i mode
 
     tmp_conf="$(mktemp -p "${OPENSEARCH_DASHBOARDS_PATH_CONF}")"
     cp "${OSD_CONF_FILE}" "${tmp_conf}"
 
     if [ -n "${ca_content}" ]; then
-        set_conf_json "${tmp_conf}" "opensearch.ssl.certificateAuthorities" \
-            "$(jq -n -c --arg v "${OSD_CA_FILE}" '[$v]')"
+        set_yaml_list "${tmp_conf}" "opensearch.ssl.certificateAuthorities" "${OSD_CA_FILE}"
 
-        # Verify the OpenSearch certificates against the CA, unless a stricter
-        # mode was already configured.
-        mode="$(yq -r '."opensearch.ssl.verificationMode" // "none"' "${tmp_conf}")"
-        if [ "${mode}" == "none" ]; then
-            set_conf_json "${tmp_conf}" "opensearch.ssl.verificationMode" \
-                '"certificate"'
+        # Verify the OpenSearch certificates against the CA and the host names,
+        # unless a verification mode was already chosen.
+        mode="$(get_yaml_prop "${tmp_conf}" "opensearch.ssl.verificationMode")"
+        if [ "${mode:-none}" == "none" ]; then
+            set_yaml_prop "${tmp_conf}" "opensearch.ssl.verificationMode" "full"
         fi
     fi
 
     if [ "${hosts_set}" == "yes" ]; then
-        set_conf_json "${tmp_conf}" "opensearch.hosts" \
-            "$(printf '%s\n' "${opensearch_hosts[@]}" | jq -R . | jq -s -c .)"
+        set_yaml_list "${tmp_conf}" "opensearch.hosts" "${opensearch_hosts[@]}"
     fi
 
-    for key in "${settings_order[@]}"; do
-        set_conf_json "${tmp_conf}" "${key}" "${settings[${key}]}"
+    for i in "${!keys[@]}"; do
+        case "${kinds[i]}" in
+            remove) remove_yaml_prop "${tmp_conf}" "${keys[i]}" ;;
+            list)   set_yaml_prop_json "${tmp_conf}" "${keys[i]}" "${values[i]}" ;;
+            string) set_yaml_prop "${tmp_conf}" "${keys[i]}" "${values[i]}" ;;
+        esac
     done
 
     mv "${tmp_conf}" "${OSD_CONF_FILE}"

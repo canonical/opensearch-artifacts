@@ -30,6 +30,15 @@ OpenSearch instance on `https://localhost:9200` with the default credentials
 configured, the OpenSearch certificates are not verified
 (`opensearch.ssl.verificationMode: none`, the upstream default).
 
+**The OpenSearch snap generates a random `kibanaserver` password and its own CA
+on install, so configuring them is a required first step.** Until then,
+OpenSearch rejects the default credentials: `http://localhost:5601` answers
+`OpenSearch Dashboards server is not ready yet` and the log at the end of this
+document shows `[ResponseError]: Response Error`. Snap confinement keeps
+Dashboards from reading these files itself; run, as root, the
+[example below](#configuration) with the OpenSearch snap on the same machine,
+or pass the credentials and CA of your cluster.
+
 The service can be managed with:
 ```
 sudo snap stop|start|restart opensearch-dashboards.opensearch-dashboards-daemon
@@ -45,15 +54,33 @@ refreshes:
 ```
 
 It is changed with the `setup` application, which writes the settings to that
-file and restarts the daemon. Settings are passed as `-E<SETTING>=<VALUE>`,
-where `<SETTING>` follows the upstream OpenSearch Dashboards tarball
-conventions:
+file and restarts the daemon. Settings are passed as `-E<SETTING>=<VALUE>`.
+`setup` covers the most used settings; `<SETTING>` is the upstream
+configuration key, its upstream docker environment variable, or that variable
+without its `OPENSEARCH_` prefix:
 
- - a configuration key, as passed to `bin/opensearch-dashboards --<key>=<value>`,
-   e.g. `-Eserver.host=0.0.0.0`
- - the upstream docker environment variable of that key, e.g.
-   `-ESERVER_HOST=0.0.0.0` or `-EOPENSEARCH_USERNAME=kibanaserver`
- - the same variable without its `OPENSEARCH_` prefix, e.g. `-EUSERNAME=kibanaserver`
+| Key | Short name |
+|---|---|
+| `opensearch.hosts` | `HOSTS` (see below) |
+| `opensearch.username` | `USERNAME` |
+| `opensearch.password` | `PASSWORD` |
+| `opensearch.ssl.verificationMode` | `SSL_VERIFICATIONMODE` |
+| `opensearch.requestTimeout` | `REQUESTTIMEOUT` |
+| `server.host` | `SERVER_HOST` |
+| `server.port` | `SERVER_PORT` |
+| `server.name` | `SERVER_NAME` |
+| `server.basePath` | `SERVER_BASEPATH` |
+| `opensearch_security.multitenancy.enabled` | `OPENSEARCH_SECURITY_MULTITENANCY_ENABLED` |
+
+For example `-Eserver.host=0.0.0.0`, `-ESERVER_HOST=0.0.0.0`,
+`-EOPENSEARCH_USERNAME=kibanaserver` or `-EUSERNAME=kibanaserver`. Any other
+setting is edited directly in the configuration file, followed by
+`sudo snap restart opensearch-dashboards`.
+
+As in the OpenSearch snap, the value is written as is, as a string, which
+OpenSearch Dashboards converts to the type of the setting (e.g.
+`-ESERVER_PORT=5602`). A value in brackets is a YAML list, and an empty value
+removes the setting (e.g. `-ESERVER_NAME=`).
 
 Two settings are specific to the snap:
 
@@ -62,14 +89,20 @@ Two settings are specific to the snap:
    and the port to `9200`.
  - `-ECA=<PEM>` -- the CA that signed the OpenSearch HTTP certificates. It is
    stored in `.../common/etc/opensearch-dashboards/certificates/opensearch-ca.pem`
-   and Dashboards then verifies the OpenSearch certificates against it
-   (`opensearch.ssl.verificationMode: certificate`, unless set otherwise).
+   and Dashboards then verifies the OpenSearch certificates against it and
+   checks that they are valid for the hosts used
+   (`opensearch.ssl.verificationMode: full`, unless set otherwise). The
+   certificates of the OpenSearch snap cover `localhost`, the hostname and the
+   IP addresses of each node; for certificates that do not, use
+   `-ESSL_VERIFICATIONMODE=certificate` to only check the CA.
 
-For example, with the OpenSearch snap installed on the same machine:
+For example, with the OpenSearch snap installed on the same machine, which
+generates the password of `kibanaserver` and its CA on install:
 ```
 sudo opensearch-dashboards.setup \
     -EHOSTS="localhost" \
-    -ECA="$(sudo cat /var/snap/opensearch/current/etc/opensearch/certificates/root-ca.pem)"
+    -EPASSWORD="$(sudo sed -n 's/^kibanaserver: "\(.*\)"$/\1/p' /var/snap/opensearch/common/init_users_pass.yaml)" \
+    -ECA="$(sudo cat /var/snap/opensearch/common/etc/opensearch/certificates/root-ca.pem)"
 ```
 
 or against a remote cluster:
@@ -78,11 +111,50 @@ sudo opensearch-dashboards.setup \
     -EHOSTS="10.0.0.1" "10.0.0.2" "10.0.0.3:9201" \
     -ECA="$(cat /path/to/root-ca.pem)" \
     -EUSERNAME=kibanaserver -EPASSWORD=kibanaserver \
-    -ESERVER_HOST=0.0.0.0 \
-    -Eopensearch.ssl.verificationMode=full
+    -ESERVER_HOST=0.0.0.0
 ```
 
 Run `opensearch-dashboards.setup --help` for the full usage.
+
+#### Keystore:
+
+Secret settings, such as the password of OpenSearch, can be kept out of
+`opensearch_dashboards.yml` in the keystore of OpenSearch Dashboards, managed
+with the upstream `opensearch-dashboards-keystore` tool through the `keystore`
+application. The keystore is
+`/var/snap/opensearch-dashboards/common/etc/opensearch-dashboards/opensearch_dashboards.keystore`:
+
+```
+sudo opensearch-dashboards.keystore create
+echo "<password>" | sudo opensearch-dashboards.keystore add --stdin opensearch.password
+sudo opensearch-dashboards.keystore list
+sudo snap restart opensearch-dashboards.opensearch-dashboards-daemon
+```
+
+#### Plugins:
+
+Plugins are managed with the upstream `opensearch-dashboards-plugin` tool through
+the `plugin` application. A plugin must be built for the same version of
+OpenSearch Dashboards. Install it from a URL, or from a file in the snap's
+common directory, then restart the daemon to load it:
+
+```
+sudo opensearch-dashboards.plugin list
+sudo opensearch-dashboards.plugin install https://<url>/<plugin>-<version>.zip
+sudo cp <plugin>.zip /var/snap/opensearch-dashboards/common/
+sudo opensearch-dashboards.plugin install file:///var/snap/opensearch-dashboards/common/<plugin>.zip
+sudo opensearch-dashboards.plugin remove <plugin>
+sudo snap restart opensearch-dashboards.opensearch-dashboards-daemon
+```
+
+The plugins bundled with the snap must remain installed: their removal is
+rejected, without changing anything.
+
+The plugins are stored with each snap revision. A refresh removes, from the new
+revision only, the custom plugins it cannot load: those built for another
+version of OpenSearch Dashboards, those with the id of a bundled plugin, and
+those requiring a removed plugin. Reinstall them once available for the new
+version. A revert gets back the previous revision's plugins.
 
 ### Testing the OpenSearch Dashboards setup:
 

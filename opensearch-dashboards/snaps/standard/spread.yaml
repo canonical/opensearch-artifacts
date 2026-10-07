@@ -21,14 +21,8 @@ suites:
       # Install the Dashboards snap under test.
       snap install "$CRAFT_ARTIFACT" --dangerous
 
-      # Install the published opensearch snap (3/edge) to act as the backend
-      # for the integration test. The revision is pinned per architecture.
-      case "$(dpkg --print-architecture)" in
-        amd64) os_revision=181 ;;
-        arm64) os_revision=180 ;;
-        *) echo "Unsupported architecture" >&2; exit 1 ;;
-      esac
-      snap install opensearch --channel=3/edge --revision="${os_revision}"
+      # TODO: revert to 3/edge once the new OpenSearch UX is merged.
+      snap install opensearch --channel=3/edge/pr-33
 
       # Connect the interfaces the opensearch snap needs.
       snap connect opensearch:log-observe

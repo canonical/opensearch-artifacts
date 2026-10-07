@@ -16,20 +16,17 @@ execute: |
     snap logs opensearch.daemon -n=50 || true
   }
 
-  snap set opensearch set-sysctl-props=yes
-
-  snap run opensearch.setup \
-    --node-name cm0 \
-    --node-roles cluster_manager,data \
-    --tls-init-setup yes \
-    --tls-priv-key-root-pass changeit \
-    --tls-priv-key-admin-pass changeit \
-    --tls-priv-key-node-pass changeit
-
-  snap start opensearch.daemon
+  # The OpenSearch snap configures and starts itself on install, generating
+  # the passwords of its users and its certificates.
+  passwords="/var/snap/opensearch/common/init_users_pass.yaml"
+  password_of() {
+    sed -n "s/^${1}: \"\\(.*\\)\"$/\\1/p" "${passwords}"
+  }
 
   retry=0
-  until curl -sk https://localhost:9200 >/dev/null 2>&1; do
+  until [ -s "${passwords}" ] && [ "$(curl -sk -o /dev/null -w '%{http_code}' \
+    https://localhost:9200/.opendistro_security \
+    -u "admin:$(password_of admin)")" = "200" ]; do
     retry=$((retry + 1))
     if [ "${retry}" -ge 90 ]; then
       echo "FAIL: OpenSearch backend did not become ready in time"
@@ -38,22 +35,10 @@ execute: |
     fi
     sleep 2
   done
+  admin_password="$(password_of admin)"
+  kibanaserver_password="$(password_of kibanaserver)"
 
-  snap run opensearch.security-init --tls-priv-key-admin-pass changeit
-
-  retry=0
-  until [ "$(curl -sk -o /dev/null -w '%{http_code}' \
-    https://localhost:9200/.opendistro_security -u admin:admin)" = "200" ]; do
-    retry=$((retry + 1))
-    if [ "${retry}" -ge 30 ]; then
-      echo "FAIL: security index was not created in time"
-      dump_diagnostics
-      exit 1
-    fi
-    sleep 2
-  done
-
-  os_resp="$(curl -sk https://localhost:9200 -u admin:admin)"
+  os_resp="$(curl -sk https://localhost:9200 -u "admin:${admin_password}")"
   echo "Backend version: $(echo "${os_resp}" | jq -r '.version.number')"
 
   # --- Point the snap at the OpenSearch backend ----------------------------
@@ -77,12 +62,12 @@ execute: |
   fi
 
   # Trust the OpenSearch CA; setup restarts the daemon.
-  ca="/var/snap/opensearch/current/etc/opensearch/certificates/root-ca.pem"
+  ca="/var/snap/opensearch/common/etc/opensearch/certificates/root-ca.pem"
   snap run "${snap_name}.setup" \
     -EHOSTS="localhost" \
     -ECA="$(cat "${ca}")" \
     -EUSERNAME=kibanaserver \
-    -EPASSWORD=kibanaserver \
+    -EPASSWORD="${kibanaserver_password}" \
     -ESERVER_HOST=0.0.0.0
 
   echo "=== opensearch_dashboards.yml ==="
@@ -92,7 +77,7 @@ execute: |
     "${conf}")"
   if ! cmp -s "${ca}" "${ca_file}" || \
       [ "$("${os_yq}" -r '."opensearch.ssl.verificationMode"' "${conf}")" \
-        != "certificate" ]; then
+        != "full" ]; then
     echo "FAIL: the OpenSearch CA was not configured"
     exit 1
   fi
@@ -101,7 +86,8 @@ execute: |
   resp=""
   retry=0
   while [ "${retry}" -lt 150 ]; do
-    resp="$(curl -s --max-time 5 -u admin:admin "${status_url}" || true)"
+    resp="$(curl -s --max-time 5 -u "admin:${admin_password}" \
+      "${status_url}" || true)"
     state="$(echo "${resp}" | jq -r '.status.overall.state // empty' \
       2>/dev/null || true)"
     if [ "${state}" = "green" ] || [ "${state}" = "yellow" ]; then
@@ -190,7 +176,8 @@ execute: |
       -H 'Accept: application/json' \
       -H 'Content-Type: application/json' \
       -H 'osd-xsrf:true' \
-      -d '{"username":"kibanaserver","password":"kibanaserver"}' \
+      -d "$(jq -n -c --arg p "${kibanaserver_password}" \
+        '{username: "kibanaserver", password: $p}')" \
       | grep -q "200 OK"; then
     echo "FAIL: authentication with valid credentials did not return 200."
     dump_diagnostics

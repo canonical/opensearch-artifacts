@@ -3,10 +3,8 @@
 set -eux
 
 
-source "${OPS_ROOT}"/helpers/io.sh
-source "${OPS_ROOT}"/helpers/config.sh
+source "${OPS_ROOT}"/helpers/plugins.sh
 
 
-# The configuration lives in $SNAP_COMMON and is kept across refreshes;
-# this only seeds or migrates it when it is missing.
-seed_config
+# The configuration lives in $SNAP_COMMON and is kept across refreshes.
+ensure_plugins_dir

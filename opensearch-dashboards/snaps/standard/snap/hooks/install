@@ -5,10 +5,11 @@ set -eux
 
 source "${OPS_ROOT}"/helpers/io.sh
 source "${OPS_ROOT}"/helpers/config.sh
+source "${OPS_ROOT}"/helpers/plugins.sh
 
 
 function create_file_structure () {
-    declare -a folders=("${OPENSEARCH_DASHBOARDS_RW_HOME}" "${OPENSEARCH_DASHBOARDS_VARLIB}" "${OPENSEARCH_DASHBOARDS_VARLOG}" "${OPENSEARCH_DASHBOARDS_TMPDIR}")
+    declare -a folders=("${OPENSEARCH_DASHBOARDS_RW_HOME}" "${OSD_PLUGINS}" "${OPENSEARCH_DASHBOARDS_VARLIB}" "${OPENSEARCH_DASHBOARDS_VARLOG}" "${OPENSEARCH_DASHBOARDS_TMPDIR}")
     for f in "${folders[@]}"; do
         add_folder "${f}" 770
     done
@@ -24,3 +25,7 @@ for f in "${folders[@]}"; do
     chown -R snap_daemon "${f}/"*
     chgrp root "${f}/"*
 done
+
+# After the ownership changes above: chown follows the links, which point to
+# the read-only snap.
+link_shipped_plugins

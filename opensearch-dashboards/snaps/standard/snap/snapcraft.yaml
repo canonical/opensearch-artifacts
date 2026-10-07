@@ -53,6 +53,7 @@ environment:
   NODE_HOME: ${OPENSEARCH_DASHBOARDS_RO_HOME}/node
   # yamllint disable rule:line-length
   OPENSEARCH_DASHBOARDS_RW_HOME: ${SNAP_DATA_CURRENT}/usr/share/opensearch-dashboards
+  OPENSEARCH_DASHBOARDS_PLUGINS: ${OPENSEARCH_DASHBOARDS_RW_HOME}/plugins
   OPENSEARCH_DASHBOARDS_PATH_CONF: ${SNAP_COMMON}/etc/opensearch-dashboards
   OPENSEARCH_DASHBOARDS_PATH_CERTS: ${OPENSEARCH_DASHBOARDS_PATH_CONF}/certificates
   OSD_PATH_CONF: ${OPENSEARCH_DASHBOARDS_PATH_CONF}
@@ -74,6 +75,14 @@ apps:
 
   setup:
     command: opt/opensearch-dashboards/setup.sh
+
+  plugin:
+    command: opt/opensearch-dashboards/plugin-wrapper.sh
+    plugs:
+      - network
+
+  keystore:
+    command: opt/opensearch-dashboards/keystore-wrapper.sh
 
 
 parts:
@@ -152,6 +161,14 @@ parts:
             "${CRAFT_PART_INSTALL}/usr/share/opensearch-dashboards/"
       done
       chmod -R 755 "${CRAFT_PART_INSTALL}/usr/share/opensearch-dashboards/bin"
+
+      # OpenSearch Dashboards and its plugin tool use <home>/plugins: link it
+      # to the revision's writable data, where the hooks link the bundled
+      # plugins, kept read only in shipped-plugins.
+      home="${CRAFT_PART_INSTALL}/usr/share/opensearch-dashboards"
+      rw_home="/var/snap/opensearch-dashboards/current/usr/share/opensearch-dashboards"
+      mv "${home}/plugins" "${home}/shipped-plugins"
+      ln -s "${rw_home}/plugins" "${home}/plugins"
 
       # Final clean-up
       rm "${archive}"
