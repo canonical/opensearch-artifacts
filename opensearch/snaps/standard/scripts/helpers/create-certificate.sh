@@ -2,6 +2,8 @@
 
 set -eu
 
+source "${OPS_ROOT}"/helpers/read-option-value.sh
+
 
 usage() {
 cat << EOF
@@ -41,66 +43,52 @@ target_dir=""
 
 # Args handling
 function parse_args () {
-    local LONG_OPTS_LIST=(
-        "password"
-        "root-password"
-        "type"
-        "name"
-        "subject"
-        "sans"
-        "target-dir"
-    )
-    local opts
-    opts=$(getopt \
-      --longoptions "$(printf "%s:," "${LONG_OPTS_LIST[@]}")help" \
-      --name "$(readlink -f "${BASH_SOURCE}")" \
-      --options "" \
-      -- "$@"
-    ) || return $?
-    eval set -- "${opts}"
-
-    while [ $# -gt 0 ]; do
-        # getopt takes the word after an option as its value, even another option,
-        # e.g. --root-password --help: reject it instead of using it as the value
-        if [[ " ${LONG_OPTS_LIST[*]} " == *" ${1#--} "* && "${2:-}" == --?* &&
-              " help ${LONG_OPTS_LIST[*]} " == *" ${2#--} "* ]]; then
-            echo "Missing value for option '$1'." >&2
-            return 1
-        fi
-        case $1 in
-            --password) shift
-                password=$1
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --password|--password=*)
+                read_option_value "$@" || return 1
+                password="$option_value"
+                shift "$option_arguments"
                 ;;
-            --root-password) shift
-                root_password=$1
+            --root-password|--root-password=*)
+                read_option_value "$@" || return 1
+                root_password="$option_value"
+                shift "$option_arguments"
                 ;;
-            --type) shift
-                type=$1
+            --type|--type=*)
+                read_option_value "$@" || return 1
+                type="$option_value"
+                shift "$option_arguments"
                 ;;
-            --name) shift
-                res_name=$1
+            --name|--name=*)
+                read_option_value "$@" || return 1
+                res_name="$option_value"
+                shift "$option_arguments"
                 ;;
-            --subject) shift
-                subject=$1
+            --subject|--subject=*)
+                read_option_value "$@" || return 1
+                subject="$option_value"
+                shift "$option_arguments"
                 ;;
-            --sans) shift
-                sans=$1
+            --sans|--sans=*)
+                read_option_value "$@" || return 1
+                sans="$option_value"
+                shift "$option_arguments"
                 ;;
-            --target-dir) shift
-                target_dir=$1
+            --target-dir|--target-dir=*)
+                read_option_value "$@" || return 1
+                target_dir="$option_value"
+                shift "$option_arguments"
                 ;;
-            --help) usage
-                exit
+            --help)
+                usage
+                exit 0
                 ;;
-            --) shift
-                if [ $# -gt 0 ]; then
-                    echo "Unexpected positional arguments; use named options." >&2
-                    return 1
-                fi
-                break
+            *)
+                echo "Unknown argument: $1" >&2
+                return 1
                 ;;
         esac
-        shift
     done
 }
 

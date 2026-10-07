@@ -2,6 +2,7 @@
 
 set -eu
 
+source "${OPS_ROOT}"/helpers/read-option-value.sh
 
 usage() {
 cat << EOF
@@ -22,43 +23,22 @@ tls_priv_key_admin_pass=""
 
 # Args handling
 function parse_args () {
-    # init-security boolean - from the charm, this should be based on a flag on the app data bag.
-    local LONG_OPTS_LIST=(
-        "tls-priv-key-admin-pass"
-    )
-    local opts
-    opts=$(getopt \
-      --longoptions "$(printf "%s:," "${LONG_OPTS_LIST[@]}")help" \
-      --name "$(readlink -f "${BASH_SOURCE}")" \
-      --options "" \
-      -- "$@"
-    ) || return $?
-    eval set -- "${opts}"
-
-    while [ $# -gt 0 ]; do
-        # getopt takes the word after an option as its value, even another option,
-        # e.g. --tls-priv-key-admin-pass --help: reject it instead of using it as the value
-        if [[ " ${LONG_OPTS_LIST[*]} " == *" ${1#--} "* && "${2:-}" == --?* &&
-              " help ${LONG_OPTS_LIST[*]} " == *" ${2#--} "* ]]; then
-            echo "Missing value for option '$1'." >&2
-            return 1
-        fi
-        case $1 in
-            --tls-priv-key-admin-pass) shift
-                tls_priv_key_admin_pass=$1
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --tls-priv-key-admin-pass|--tls-priv-key-admin-pass=*)
+                read_option_value "$@" || return 1
+                tls_priv_key_admin_pass="$option_value"
+                shift "$option_arguments"
                 ;;
-            --help) usage
-                exit
+            --help)
+                usage
+                exit 0
                 ;;
-            --) shift
-                if [ $# -gt 0 ]; then
-                    echo "Unexpected positional arguments; use named options." >&2
-                    return 1
-                fi
-                break
+            *)
+                echo "Unknown argument: $1" >&2
+                return 1
                 ;;
         esac
-        shift
     done
 
     # in case those are set through snap.set

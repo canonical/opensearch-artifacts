@@ -61,7 +61,16 @@ check_bundled_removal() {
 
 check_bundled_removal "$@"
 
+if [ -z "${OPENSEARCH_JAVA_OPTS:-}" ]; then
+    export OPENSEARCH_JAVA_OPTS="-Xms1g -Xmx1g"
+fi
+
 # Run the native tool and update this revision's saved configuration after removal.
-# Other revisions keep their own copies for rollback.
-exec "${SNAP}/usr/bin/python3" "${SNAP}/opt/opensearch/helpers/plugin-configuration.py" \
-    run "${SNAP}/usr/share/opensearch/shipped-bin/opensearch-plugin.orig" "${@}"
+# Other revisions keep their own copies for rollback. The root group is needed:
+# the installer copies the config's owner and group (snap_daemon:root) onto new files.
+exec "${SNAP}/usr/bin/setpriv" \
+    --clear-groups \
+    --reuid snap_daemon \
+    --regid root -- \
+    "${SNAP}/usr/bin/python3" "${SNAP}/opt/opensearch/helpers/plugin-configuration.py" \
+    run "${OPENSEARCH_BIN}/opensearch-plugin" "${@}"

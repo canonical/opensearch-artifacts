@@ -6,6 +6,7 @@ set -eu
 
 source "${OPS_ROOT}"/helpers/snap-logger.sh "self-managed-node"
 source "${OPS_ROOT}"/helpers/set-conf.sh
+source "${OPS_ROOT}"/helpers/read-option-value.sh
 
 usage() {
 cat << EOF
@@ -36,66 +37,52 @@ target_dir=""
 
 # Args handling
 function parse_args () {
-    local LONG_OPTS_LIST=(
-        "name"
-        "root-password"
-        "node-password"
-        "node-subject"
-        "sans"
-        "rest-with-tls"
-        "target-dir"
-    )
-    local opts
-    opts=$(getopt \
-      --longoptions "$(printf "%s:," "${LONG_OPTS_LIST[@]}")help" \
-      --name "$(readlink -f "${BASH_SOURCE}")" \
-      --options "" \
-      -- "$@"
-    ) || return $?
-    eval set -- "${opts}"
-
-    while [ $# -gt 0 ]; do
-        # getopt takes the word after an option as its value, even another option,
-        # e.g. --root-password --help: reject it instead of using it as the value
-        if [[ " ${LONG_OPTS_LIST[*]} " == *" ${1#--} "* && "${2:-}" == --?* &&
-              " help ${LONG_OPTS_LIST[*]} " == *" ${2#--} "* ]]; then
-            echo "Missing value for option '$1'." >&2
-            return 1
-        fi
-        case $1 in
-            --name) shift
-                name=$1
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --name|--name=*)
+                read_option_value "$@" || return 1
+                name="$option_value"
+                shift "$option_arguments"
                 ;;
-            --root-password) shift
-                root_password=$1
+            --root-password|--root-password=*)
+                read_option_value "$@" || return 1
+                root_password="$option_value"
+                shift "$option_arguments"
                 ;;
-            --node-password) shift
-                node_password=$1
+            --node-password|--node-password=*)
+                read_option_value "$@" || return 1
+                node_password="$option_value"
+                shift "$option_arguments"
                 ;;
-            --node-subject) shift
-                node_subject=$1
+            --node-subject|--node-subject=*)
+                read_option_value "$@" || return 1
+                node_subject="$option_value"
+                shift "$option_arguments"
                 ;;
-            --sans) shift
-                sans=$1
+            --sans|--sans=*)
+                read_option_value "$@" || return 1
+                sans="$option_value"
+                shift "$option_arguments"
                 ;;
-            --rest-with-tls) shift
-                rest_with_tls=$1
+            --rest-with-tls|--rest-with-tls=*)
+                read_option_value "$@" || return 1
+                rest_with_tls="$option_value"
+                shift "$option_arguments"
                 ;;
-            --target-dir) shift
-                target_dir=$1
+            --target-dir|--target-dir=*)
+                read_option_value "$@" || return 1
+                target_dir="$option_value"
+                shift "$option_arguments"
                 ;;
-            --help) usage
-                exit
+            --help)
+                usage
+                exit 0
                 ;;
-            --) shift
-                if [ $# -gt 0 ]; then
-                    echo "Unexpected positional arguments; use named options." >&2
-                    return 1
-                fi
-                break
+            *)
+                echo "Unknown argument: $1" >&2
+                return 1
                 ;;
         esac
-        shift
     done
 }
 
@@ -154,15 +141,16 @@ fi
 
 
 # create the node cert
+# Pass values with = so they are accepted even when they start with --.
 source \
     "${OPS_ROOT}"/helpers/create-certificate.sh \
-    --name "${name}" \
-    --root-password "${root_password}" \
-    --password "${node_password}" \
-    --subject "${node_subject}" \
-    --sans "${sans}" \
-    --target-dir "${target_dir}" \
-    --type "node"
+    --name="${name}" \
+    --root-password="${root_password}" \
+    --password="${node_password}" \
+    --subject="${node_subject}" \
+    --sans="${sans}" \
+    --target-dir="${target_dir}" \
+    --type=node
 
 
 # set conf

@@ -155,12 +155,10 @@ apps:
       bin_script: opensearch
 
   plugin:
-    command: opt/opensearch/bin-wrapper.sh
+    command: opt/opensearch/plugin-wrapper.sh
     plugs:
       - network
       - network-bind
-    environment:
-      bin_script: opensearch-plugin
 
   cli:
     command: opt/opensearch/bin-wrapper.sh
@@ -192,7 +190,7 @@ apps:
       - network
       - network-bind
     environment:
-      bin_script: opensearch-keystore.orig
+      bin_script: opensearch-keystore
 
   node:
     command: opt/opensearch/bin-wrapper.sh
@@ -390,16 +388,7 @@ parts:
       done
 
     override-prime: |
-      # Copy wrappers for bin commands to fix upgrades:
-      # https://github.com/canonical/opensearch-operator/issues/537
       craftctl default
-
-      bin_dir="${CRAFT_PRIME}/usr/share/opensearch/shipped-bin"
-      mv "${bin_dir}/opensearch-plugin" "${bin_dir}/opensearch-plugin.orig"
-      mv "${bin_dir}/opensearch-keystore" "${bin_dir}/opensearch-keystore.orig"
-
-      cp "${CRAFT_STAGE}/opt/opensearch/plugin-wrapper.sh" "${bin_dir}/opensearch-plugin"
-      cp "${CRAFT_STAGE}/opt/opensearch/keystore-wrapper.sh" "${bin_dir}/opensearch-keystore"
 
       ln -s /var/snap/opensearch/current/usr/share/opensearch/plugins "${CRAFT_PRIME}/usr/share/opensearch/plugins"
       ln -s /var/snap/opensearch/current/usr/share/opensearch/bin "${CRAFT_PRIME}/usr/share/opensearch/bin"

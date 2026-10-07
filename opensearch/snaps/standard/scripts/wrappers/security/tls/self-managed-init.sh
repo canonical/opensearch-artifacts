@@ -4,6 +4,7 @@ set -eu
 
 source "${OPS_ROOT}"/helpers/snap-logger.sh "self-managed-init"
 source "${OPS_ROOT}"/helpers/set-conf.sh
+source "${OPS_ROOT}"/helpers/read-option-value.sh
 
 
 usage() {
@@ -32,62 +33,47 @@ target_dir=""
 
 # Args handling
 function parse_args () {
-    local LONG_OPTS_LIST=(
-        "root-password"
-        "admin-password"
-        "root-subject"
-        "admin-subject"
-        "rest-with-tls"
-        "target-dir"
-    )
-    local opts
-    opts=$(getopt \
-      --longoptions "$(printf "%s:," "${LONG_OPTS_LIST[@]}")help" \
-      --name "$(readlink -f "${BASH_SOURCE}")" \
-      --options "" \
-      -- "$@"
-    ) || return $?
-    eval set -- "${opts}"
-
-    while [ $# -gt 0 ]; do
-        # getopt takes the word after an option as its value, even another option,
-        # e.g. --root-password --help: reject it instead of using it as the value
-        if [[ " ${LONG_OPTS_LIST[*]} " == *" ${1#--} "* && "${2:-}" == --?* &&
-              " help ${LONG_OPTS_LIST[*]} " == *" ${2#--} "* ]]; then
-            echo "Missing value for option '$1'." >&2
-            return 1
-        fi
-        case $1 in
-            --root-password) shift
-                root_password=$1
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --root-password|--root-password=*)
+                read_option_value "$@" || return 1
+                root_password="$option_value"
+                shift "$option_arguments"
                 ;;
-            --admin-password) shift
-                admin_password=$1
+            --admin-password|--admin-password=*)
+                read_option_value "$@" || return 1
+                admin_password="$option_value"
+                shift "$option_arguments"
                 ;;
-            --root-subject) shift
-                root_subject=$1
+            --root-subject|--root-subject=*)
+                read_option_value "$@" || return 1
+                root_subject="$option_value"
+                shift "$option_arguments"
                 ;;
-            --admin-subject) shift
-                admin_subject=$1
+            --admin-subject|--admin-subject=*)
+                read_option_value "$@" || return 1
+                admin_subject="$option_value"
+                shift "$option_arguments"
                 ;;
-            --rest-with-tls) shift
-                rest_with_tls=$1
+            --rest-with-tls|--rest-with-tls=*)
+                read_option_value "$@" || return 1
+                rest_with_tls="$option_value"
+                shift "$option_arguments"
                 ;;
-            --target-dir) shift
-                target_dir=$1
+            --target-dir|--target-dir=*)
+                read_option_value "$@" || return 1
+                target_dir="$option_value"
+                shift "$option_arguments"
                 ;;
-            --help) usage
-                exit
+            --help)
+                usage
+                exit 0
                 ;;
-            --) shift
-                if [ $# -gt 0 ]; then
-                    echo "Unexpected positional arguments; use named options." >&2
-                    return 1
-                fi
-                break
+            *)
+                echo "Unknown argument: $1" >&2
+                return 1
                 ;;
         esac
-        shift
     done
 }
 
@@ -96,21 +82,22 @@ parse_args "$@"
 
 
 # create the root cert
+# Pass values with = so they are accepted even when they start with --.
 source \
     "${OPS_ROOT}"/helpers/create-certificate.sh \
-    --password "${root_password}" \
-    --subject "${root_subject}" \
-    --target-dir "${target_dir}" \
-    --type "root"
+    --password="${root_password}" \
+    --subject="${root_subject}" \
+    --target-dir="${target_dir}" \
+    --type=root
 
 # create the admin cert
 source \
     "${OPS_ROOT}"/helpers/create-certificate.sh \
-    --root-password "${root_password}" \
-    --password "${admin_password}" \
-    --subject "${admin_subject}" \
-    --target-dir "${target_dir}" \
-    --type "admin"
+    --root-password="${root_password}" \
+    --password="${admin_password}" \
+    --subject="${admin_subject}" \
+    --target-dir="${target_dir}" \
+    --type=admin
 
 
 # set conf
