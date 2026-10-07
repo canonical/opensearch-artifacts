@@ -8,43 +8,32 @@ source "${OPS_ROOT}"/helpers/config.sh
 
 usage() {
 cat << EOF
-usage: sudo opensearch-dashboards.setup [-E<SETTING>=<VALUE> ...] [HOST ...]
+usage: sudo opensearch-dashboards.setup [--<setting>=<value> ...] [HOST ...]
 
 Configures OpenSearch Dashboards and restarts it. Settings are written to:
   ${OSD_CONF_FILE}
 
-<SETTING> is one of the following upstream configuration keys, as in
-opensearch_dashboards.yml, e.g. -Eserver.host=0.0.0.0:
+--<setting>=<value>   Sets an OpenSearch Dashboards setting, as the upstream
+                      bin/opensearch-dashboards --<setting>=<value>, e.g.
+                      --server.host=0.0.0.0. The value is written as is, as a
+                      string, which OpenSearch Dashboards converts to the type
+                      of the setting, e.g. --server.port=5602. A value in
+                      brackets is a YAML list. An empty value removes the
+                      setting, e.g. --server.name=
+                      OpenSearch Dashboards refuses to start with an unknown
+                      setting: check the logs after a change.
 
-  opensearch.hosts
-  opensearch.username
-  opensearch.password
-  opensearch.ssl.verificationMode
-  opensearch.requestTimeout
-  server.host
-  server.port
-  server.name
-  server.basePath
-  opensearch_security.multitenancy.enabled
+--opensearch.hosts=<host> [<host> ...]
+        OpenSearch hosts. Further positional arguments and comma separated
+        values are added to the list. The scheme defaults to https:// and the
+        port to 9200.
 
-Any other setting is edited directly in the configuration file.
-
-Special settings:
-  -EOPENSEARCH_HOSTS=<host> [<host> ...]
-        OpenSearch hosts (opensearch.hosts). Further positional arguments and
-        comma separated values are added to the list. The scheme defaults to
-        https:// and the port to 9200.
-  -EOPENSEARCH_CA=<PEM>
+--opensearch-ca=<PEM>
         PEM content of the CA that signed the OpenSearch HTTP certificates,
-        e.g. -EOPENSEARCH_CA="\$(cat /path/to/root-ca.pem)". It is stored in
+        e.g. --opensearch-ca="\$(cat /path/to/root-ca.pem)". It is stored in
         ${OSD_CA_FILE} and trusted for
         connections to OpenSearch (verificationMode "full" unless set: the
         OpenSearch certificates must also be valid for the hosts used).
-
-As in the OpenSearch snap, the value is written as is, as a string: OpenSearch
-Dashboards converts it to the type of the setting, e.g. -Eserver.port=5602.
-A value in brackets is a YAML list. An empty value removes the setting,
-e.g. -Eserver.name=
 
   -h, --help    Shows this help menu
 EOF
@@ -54,32 +43,6 @@ EOF
 function die () {
     echo "error: ${*}" >&2
     exit 1
-}
-
-
-# The most used settings, see the upstream opensearch_dashboards.yml. Others
-# are edited directly in the configuration file.
-OSD_SETTINGS=(
-    opensearch.hosts
-    opensearch.username
-    opensearch.password
-    opensearch.ssl.verificationMode
-    opensearch.requestTimeout
-    server.host
-    server.port
-    server.name
-    server.basePath
-    opensearch_security.multitenancy.enabled
-)
-
-
-function check_supported () {
-    local key
-
-    for key in "${OSD_SETTINGS[@]}"; do
-        [ "${key}" != "${1}" ] || return 0
-    done
-    die "unsupported setting '${1}', see --help"
 }
 
 
@@ -148,22 +111,19 @@ function add_setting () {
     local arg="${1}"
     local name value key
 
-    [[ "${arg}" == *=* ]] || die "expected -E<SETTING>=<VALUE>, got '-E${arg}'"
     name="${arg%%=*}"
     value="${arg#*=}"
+    [[ "${arg}" == *=* ]] && [ -n "${name}" ] \
+        || die "expected --<setting>=<value>, got '--${arg}'"
 
     case "${name}" in
-        OPENSEARCH_CA)
-            [ -n "${value}" ] || die "-EOPENSEARCH_CA requires the PEM content of the CA"
+        opensearch-ca)
+            [ -n "${value}" ] || die "--opensearch-ca requires the PEM content of the CA"
             ca_content="${value}"
             last_key=""
             return
             ;;
-        OPENSEARCH_HOSTS)
-            key="opensearch.hosts"
-            ;;
         *)
-            check_supported "${name}"
             key="${name}"
             ;;
     esac
@@ -200,13 +160,8 @@ function parse_args () {
                 usage
                 exit 0
                 ;;
-            -E)
-                shift
-                [ $# -gt 0 ] || die "-E requires <SETTING>=<VALUE>"
-                add_setting "${1}"
-                ;;
-            -E*)
-                add_setting "${1#-E}"
+            --?*)
+                add_setting "${1#--}"
                 ;;
             -*)
                 die "unknown option '${1}', see --help"
@@ -221,7 +176,7 @@ function parse_args () {
     done
 
     if [ "${hosts_set}" == "yes" ] && [ ${#opensearch_hosts[@]} -eq 0 ]; then
-        die "-EOPENSEARCH_HOSTS requires at least one host"
+        die "--opensearch.hosts requires at least one host"
     fi
 }
 
@@ -236,7 +191,7 @@ function install_ca () {
     # default, is unused and not readable by this app.
     if ! SSL_CERT_FILE=/dev/null openssl x509 -in "${tmp_ca}" -noout 2>/dev/null; then
         rm -f "${tmp_ca}"
-        die "-EOPENSEARCH_CA is not a valid PEM certificate"
+        die "--opensearch-ca is not a valid PEM certificate"
     fi
 
     mv "${tmp_ca}" "${OSD_CA_FILE}"
