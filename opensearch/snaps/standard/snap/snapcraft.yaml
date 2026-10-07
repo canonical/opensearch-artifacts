@@ -335,6 +335,10 @@ parts:
       mkdir -p "${CRAFT_PART_INSTALL}/etc/opensearch/"
       mv "${CRAFT_PART_INSTALL}"/config/* "${CRAFT_PART_INSTALL}/etc/opensearch/"
 
+      mkdir -p "${CRAFT_PART_INSTALL}/etc/opensearch/opensearch-performance-analyzer"
+      cp "${CRAFT_PROJECT_DIR}/snap/local/opensearch-performance-analyzer/"* \
+        "${CRAFT_PART_INSTALL}/etc/opensearch/opensearch-performance-analyzer/"
+
       declare -a resources=(
           bin lib modules plugins agent manifest.yml NOTICE.txt LICENSE.txt README.md
       )
