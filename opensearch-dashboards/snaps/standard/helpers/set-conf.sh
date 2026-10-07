@@ -3,18 +3,16 @@
 # Same helpers as the OpenSearch snap (opensearch/snaps/standard/scripts/helpers/set-conf.sh).
 
 
-# OpenSearch Dashboards joins nested mapping keys with dots, including keys already containing
-# dots. Edit every spelling of one setting, preserving siblings. The last spelling is effective.
-# Unlike OpenSearch, an emptied parent (e.g. "opensearch: {}") replaces the dotted settings
-# under it, so parents left empty are removed.
+# A setting can be spelled dotted ("opensearch.hosts"), nested or mixed: replace every
+# spelling by a single dotted key. Upstream assigns a nested key ("opensearch:") over the
+# dotted keys read before it, so a parent emptied here is removed too.
 function edit_yaml_setting() {
     local target_file="${1}" key="${2}" operation="${3}"
     shift 3
     "${SNAP}"/usr/bin/yq -y -i --arg k "${key}" "$@" '
         [paths | select(all(.[]; type == "string") and join(".") == $k)] as $paths
-        | (if $paths | length > 0 then getpath($paths[-1]) else null end) as $old
         | delpaths($paths)
-        | reduce ($paths[] | . as $p | range(($p | length) - 1; 0; -1) | $p[:.]) as $parent
+        | reduce ($paths[] | range(length - 1; 0; -1) as $n | .[:$n]) as $parent
             (.; if getpath($parent) == {} then delpaths([$parent]) else . end)
         | '"${operation}" "${target_file}"
 }
@@ -34,27 +32,9 @@ function set_yaml_prop() {
     edit_yaml_setting "${1}" "${2}" '.[$k] = $v' --arg v "${3}"
 }
 
-# Sets a setting to a JSON value, e.g. set_yaml_prop_json f opensearch.hosts '[]'
+# Sets a setting to a JSON value, e.g. set_yaml_prop_json f opensearch.hosts '["https://a:9200"]'
 function set_yaml_prop_json() {
     edit_yaml_setting "${1}" "${2}" '.[$k] = $v' --argjson v "${3}"
-}
-
-# Sets a setting to the list of the given items, one per argument,
-# e.g. set_yaml_list f opensearch.hosts https://localhost:9200
-function set_yaml_list() {
-    local target_file="${1}" key="${2}" item
-    shift 2
-    set_yaml_prop_json "${target_file}" "${key}" '[]'
-    for item in "$@"; do
-        add_yaml_list_item "${target_file}" "${key}" "${item}"
-    done
-}
-
-# Adds an item to a list setting unless already present, keeping the others
-function add_yaml_list_item() {
-    edit_yaml_setting "${1}" "${2}" \
-        '.[$k] = (($old // []) | (if type == "array" then . else [.] end)
-                   | if any(.[]; . == $v) then . else . + [$v] end)' --arg v "${3}"
 }
 
 function remove_yaml_prop() {

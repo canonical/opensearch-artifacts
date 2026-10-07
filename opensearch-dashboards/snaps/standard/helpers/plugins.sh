@@ -26,8 +26,7 @@ function link_shipped_plugins () {
         [ -d "${plugin}" ] || continue
         name="$(basename "${plugin}")"
         if [ ! -L "${OSD_PLUGINS}/${name}" ]; then
-            as_snap_daemon ln -s "${OSD_SHIPPED_LINK_DIR}/${name}" \
-                "${OSD_PLUGINS}/${name}"
+            ln -s "${OSD_SHIPPED_LINK_DIR}/${name}" "${OSD_PLUGINS}/${name}"
         fi
     done
 }

@@ -36,12 +36,6 @@ function check_bundled_removal () {
 
 check_bundled_removal "$@"
 
-if [ "$(id -u)" -ne 0 ]; then
-    echo "error: must be run as root: sudo ${SNAP_INSTANCE_NAME}.plugin $*" >&2
-    exit 1
-fi
-
-# The plugins and the configuration belong to snap_daemon, with the root group.
 exec "${SNAP}"/usr/bin/setpriv \
     --clear-groups \
     --reuid snap_daemon \

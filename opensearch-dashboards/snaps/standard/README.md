@@ -54,64 +54,53 @@ refreshes:
 ```
 
 It is changed with the `setup` application, which writes the settings to that
-file and restarts the daemon. Settings are passed as `-E<SETTING>=<VALUE>`.
-`setup` covers the most used settings; `<SETTING>` is the upstream
-configuration key, its upstream docker environment variable, or that variable
-without its `OPENSEARCH_` prefix:
+file and restarts the daemon. Settings are passed as `-E<SETTING>=<VALUE>`, where
+`<SETTING>` is the upstream configuration key, as in `opensearch_dashboards.yml`,
+e.g. `-Eserver.host=0.0.0.0`. `setup` covers the most used settings:
 
-| Key | Short name |
-|---|---|
-| `opensearch.hosts` | `HOSTS` (see below) |
-| `opensearch.username` | `USERNAME` |
-| `opensearch.password` | `PASSWORD` |
-| `opensearch.ssl.verificationMode` | `SSL_VERIFICATIONMODE` |
-| `opensearch.requestTimeout` | `REQUESTTIMEOUT` |
-| `server.host` | `SERVER_HOST` |
-| `server.port` | `SERVER_PORT` |
-| `server.name` | `SERVER_NAME` |
-| `server.basePath` | `SERVER_BASEPATH` |
-| `opensearch_security.multitenancy.enabled` | `OPENSEARCH_SECURITY_MULTITENANCY_ENABLED` |
+ - `opensearch.hosts`, `opensearch.username`, `opensearch.password`
+ - `opensearch.ssl.verificationMode`, `opensearch.requestTimeout`
+ - `server.host`, `server.port`, `server.name`, `server.basePath`
+ - `opensearch_security.multitenancy.enabled`
 
-For example `-Eserver.host=0.0.0.0`, `-ESERVER_HOST=0.0.0.0`,
-`-EOPENSEARCH_USERNAME=kibanaserver` or `-EUSERNAME=kibanaserver`. Any other
-setting is edited directly in the configuration file, followed by
+Any other setting is edited directly in the configuration file, followed by
 `sudo snap restart opensearch-dashboards`.
 
 As in the OpenSearch snap, the value is written as is, as a string, which
 OpenSearch Dashboards converts to the type of the setting (e.g.
-`-ESERVER_PORT=5602`). A value in brackets is a YAML list, and an empty value
-removes the setting (e.g. `-ESERVER_NAME=`).
+`-Eserver.port=5602`). A value in brackets is a YAML list, and an empty value
+removes the setting (e.g. `-Eserver.name=`).
 
 Two settings are specific to the snap:
 
- - `-EHOSTS=<host> [<host> ...]` -- the OpenSearch hosts (`opensearch.hosts`).
+ - `-EOPENSEARCH_HOSTS=<host> [<host> ...]` -- the OpenSearch hosts (`opensearch.hosts`).
    Further arguments are added to the list; the scheme defaults to `https://`
    and the port to `9200`.
- - `-ECA=<PEM>` -- the CA that signed the OpenSearch HTTP certificates. It is
+ - `-EOPENSEARCH_CA=<PEM>` -- the CA that signed the OpenSearch HTTP certificates. It is
    stored in `.../common/etc/opensearch-dashboards/certificates/opensearch-ca.pem`
    and Dashboards then verifies the OpenSearch certificates against it and
    checks that they are valid for the hosts used
    (`opensearch.ssl.verificationMode: full`, unless set otherwise). The
    certificates of the OpenSearch snap cover `localhost`, the hostname and the
    IP addresses of each node; for certificates that do not, use
-   `-ESSL_VERIFICATIONMODE=certificate` to only check the CA.
+   `-Eopensearch.ssl.verificationMode=certificate` to only check the CA.
 
 For example, with the OpenSearch snap installed on the same machine, which
 generates the password of `kibanaserver` and its CA on install:
 ```
 sudo opensearch-dashboards.setup \
-    -EHOSTS="localhost" \
-    -EPASSWORD="$(sudo sed -n 's/^kibanaserver: "\(.*\)"$/\1/p' /var/snap/opensearch/common/init_users_pass.yaml)" \
-    -ECA="$(sudo cat /var/snap/opensearch/common/etc/opensearch/certificates/root-ca.pem)"
+    -EOPENSEARCH_HOSTS="localhost" \
+    -Eopensearch.password="$(sudo sed -n 's/^kibanaserver: "\(.*\)"$/\1/p' /var/snap/opensearch/common/init_users_pass.yaml)" \
+    -EOPENSEARCH_CA="$(sudo cat /var/snap/opensearch/common/etc/opensearch/certificates/root-ca.pem)"
 ```
 
 or against a remote cluster:
 ```
 sudo opensearch-dashboards.setup \
-    -EHOSTS="10.0.0.1" "10.0.0.2" "10.0.0.3:9201" \
-    -ECA="$(cat /path/to/root-ca.pem)" \
-    -EUSERNAME=kibanaserver -EPASSWORD=kibanaserver \
-    -ESERVER_HOST=0.0.0.0
+    -EOPENSEARCH_HOSTS="10.0.0.1" "10.0.0.2" "10.0.0.3:9201" \
+    -EOPENSEARCH_CA="$(cat /path/to/root-ca.pem)" \
+    -Eopensearch.username=kibanaserver -Eopensearch.password=kibanaserver \
+    -Eserver.host=0.0.0.0
 ```
 
 Run `opensearch-dashboards.setup --help` for the full usage.
@@ -159,7 +148,7 @@ version. A revert gets back the previous revision's plugins.
 ### Testing the OpenSearch Dashboards setup:
 
 OpenSearch Dashboards is by default served on http://localhost:5601 (set
-`-ESERVER_HOST=0.0.0.0` to expose it on all interfaces).
+`-Eserver.host=0.0.0.0` to expose it on all interfaces).
 
 ```
 curl -u kibanaserver:kibanaserver http://localhost:5601/api/status

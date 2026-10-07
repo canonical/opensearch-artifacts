@@ -9,15 +9,6 @@ OSD_CA_FILE="${OPENSEARCH_DASHBOARDS_PATH_CERTS}/opensearch-ca.pem"
 source "${OPS_ROOT}"/helpers/set-conf.sh
 
 
-function copy_missing_files () {
-    local src
-
-    for src in "${1}"/*; do
-        [ -e "${2}/$(basename "${src}")" ] || cp -r "${src}" "${2}/"
-    done
-}
-
-
 # Seed the configuration in $SNAP_COMMON when missing, copying the upstream one
 # pointed at the local OpenSearch over https. An existing configuration is
 # never modified.
@@ -30,9 +21,8 @@ function seed_config () {
     mkdir -p "${OPENSEARCH_DASHBOARDS_PATH_CONF}" \
         "${OPENSEARCH_DASHBOARDS_PATH_CERTS}"
 
-    copy_missing_files "${SNAP}/etc/opensearch-dashboards" \
-        "${OPENSEARCH_DASHBOARDS_PATH_CONF}"
-    set_yaml_list "${OSD_CONF_FILE}" "opensearch.hosts" "https://localhost:9200"
+    cp -r "${SNAP}"/etc/opensearch-dashboards/. "${OPENSEARCH_DASHBOARDS_PATH_CONF}/"
+    set_yaml_prop_json "${OSD_CONF_FILE}" "opensearch.hosts" '["https://localhost:9200"]'
     set_yaml_prop "${OSD_CONF_FILE}" "path.data" "${OPENSEARCH_DASHBOARDS_VARLIB}"
 
     chmod 770 "${OPENSEARCH_DASHBOARDS_PATH_CONF}" \

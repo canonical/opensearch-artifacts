@@ -64,11 +64,11 @@ execute: |
   # Trust the OpenSearch CA; setup restarts the daemon.
   ca="/var/snap/opensearch/common/etc/opensearch/certificates/root-ca.pem"
   snap run "${snap_name}.setup" \
-    -EHOSTS="localhost" \
-    -ECA="$(cat "${ca}")" \
-    -EUSERNAME=kibanaserver \
-    -EPASSWORD="${kibanaserver_password}" \
-    -ESERVER_HOST=0.0.0.0
+    -EOPENSEARCH_HOSTS="localhost" \
+    -EOPENSEARCH_CA="$(cat "${ca}")" \
+    -Eopensearch.username=kibanaserver \
+    -Eopensearch.password="${kibanaserver_password}" \
+    -Eserver.host=0.0.0.0
 
   echo "=== opensearch_dashboards.yml ==="
   cat "${conf}"

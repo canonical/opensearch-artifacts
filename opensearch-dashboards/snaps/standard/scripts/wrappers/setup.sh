@@ -8,45 +8,43 @@ source "${OPS_ROOT}"/helpers/config.sh
 
 usage() {
 cat << EOF
-usage: sudo ${SNAP_INSTANCE_NAME}.setup [-E<SETTING>=<VALUE> ...] [HOST ...]
+usage: sudo opensearch-dashboards.setup [-E<SETTING>=<VALUE> ...] [HOST ...]
 
 Configures OpenSearch Dashboards and restarts it. Settings are written to:
   ${OSD_CONF_FILE}
 
-<SETTING> is one of the following upstream configuration keys, its upstream
-docker environment variable, or that variable without its OPENSEARCH_ prefix:
+<SETTING> is one of the following upstream configuration keys, as in
+opensearch_dashboards.yml, e.g. -Eserver.host=0.0.0.0:
 
-  key                                       short name
-  opensearch.hosts                          HOSTS (see below)
-  opensearch.username                       USERNAME
-  opensearch.password                       PASSWORD
-  opensearch.ssl.verificationMode           SSL_VERIFICATIONMODE
-  opensearch.requestTimeout                 REQUESTTIMEOUT
-  server.host                               SERVER_HOST
-  server.port                               SERVER_PORT
-  server.name                               SERVER_NAME
-  server.basePath                           SERVER_BASEPATH
-  opensearch_security.multitenancy.enabled  OPENSEARCH_SECURITY_MULTITENANCY_ENABLED
+  opensearch.hosts
+  opensearch.username
+  opensearch.password
+  opensearch.ssl.verificationMode
+  opensearch.requestTimeout
+  server.host
+  server.port
+  server.name
+  server.basePath
+  opensearch_security.multitenancy.enabled
 
-e.g. -Eserver.host=0.0.0.0, -ESERVER_HOST=0.0.0.0 or -EUSERNAME=kibanaserver.
 Any other setting is edited directly in the configuration file.
 
 Special settings:
-  -EHOSTS=<host> [<host> ...]
+  -EOPENSEARCH_HOSTS=<host> [<host> ...]
         OpenSearch hosts (opensearch.hosts). Further positional arguments and
         comma separated values are added to the list. The scheme defaults to
         https:// and the port to 9200.
-  -ECA=<PEM>
+  -EOPENSEARCH_CA=<PEM>
         PEM content of the CA that signed the OpenSearch HTTP certificates,
-        e.g. -ECA="\$(cat /path/to/root-ca.pem)". It is stored in
+        e.g. -EOPENSEARCH_CA="\$(cat /path/to/root-ca.pem)". It is stored in
         ${OSD_CA_FILE} and trusted for
         connections to OpenSearch (verificationMode "full" unless set: the
         OpenSearch certificates must also be valid for the hosts used).
 
 As in the OpenSearch snap, the value is written as is, as a string: OpenSearch
-Dashboards converts it to the type of the setting, e.g. -ESERVER_PORT=5602.
+Dashboards converts it to the type of the setting, e.g. -Eserver.port=5602.
 A value in brackets is a YAML list. An empty value removes the setting,
-e.g. -ESERVER_NAME=
+e.g. -Eserver.name=
 
   -h, --help    Shows this help menu
 EOF
@@ -75,27 +73,13 @@ OSD_SETTINGS=(
 )
 
 
-# Resolve a -E name into a configuration key: the key itself, its upstream
-# docker environment variable (opensearch.hosts -> OPENSEARCH_HOSTS), or the
-# latter without its OPENSEARCH_ prefix.
-function resolve_key () {
-    local name="${1}"
-    local key name_env
+function check_supported () {
+    local key
 
     for key in "${OSD_SETTINGS[@]}"; do
-        if [ "${key}" == "${name}" ]; then
-            echo "${key}"
-            return
-        fi
-        name_env="$(echo "${key^^}" | tr . _)"
-        if [ "${name_env}" == "${name}" ] || \
-                [ "${name_env}" == "OPENSEARCH_${name}" ]; then
-            echo "${key}"
-            return
-        fi
+        [ "${key}" != "${1}" ] || return 0
     done
-
-    die "unsupported setting '${name}', see --help"
+    die "unsupported setting '${1}', see --help"
 }
 
 
@@ -145,9 +129,10 @@ function add_hosts () {
 
     IFS=', ' read -r -a hosts <<< "${1}"
     for host in "${hosts[@]}"; do
-        [ -n "${host}" ] && opensearch_hosts+=("$(normalize_host "${host}")")
+        [ -n "${host}" ] || continue
+        host="$(normalize_host "${host}")"
+        [[ " ${opensearch_hosts[*]} " == *" ${host} "* ]] || opensearch_hosts+=("${host}")
     done
-    return 0
 }
 
 
@@ -168,17 +153,18 @@ function add_setting () {
     value="${arg#*=}"
 
     case "${name}" in
-        CA)
-            [ -n "${value}" ] || die "-ECA requires the PEM content of the CA"
+        OPENSEARCH_CA)
+            [ -n "${value}" ] || die "-EOPENSEARCH_CA requires the PEM content of the CA"
             ca_content="${value}"
             last_key=""
             return
             ;;
-        HOSTS)
+        OPENSEARCH_HOSTS)
             key="opensearch.hosts"
             ;;
         *)
-            key="$(resolve_key "${name}")"
+            check_supported "${name}"
+            key="${name}"
             ;;
     esac
 
@@ -235,7 +221,7 @@ function parse_args () {
     done
 
     if [ "${hosts_set}" == "yes" ] && [ ${#opensearch_hosts[@]} -eq 0 ]; then
-        die "-EHOSTS requires at least one host"
+        die "-EOPENSEARCH_HOSTS requires at least one host"
     fi
 }
 
@@ -250,7 +236,7 @@ function install_ca () {
     # default, is unused and not readable by this app.
     if ! SSL_CERT_FILE=/dev/null openssl x509 -in "${tmp_ca}" -noout 2>/dev/null; then
         rm -f "${tmp_ca}"
-        die "-ECA is not a valid PEM certificate"
+        die "-EOPENSEARCH_CA is not a valid PEM certificate"
     fi
 
     mv "${tmp_ca}" "${OSD_CA_FILE}"
@@ -267,7 +253,8 @@ function write_config () {
     cp "${OSD_CONF_FILE}" "${tmp_conf}"
 
     if [ -n "${ca_content}" ]; then
-        set_yaml_list "${tmp_conf}" "opensearch.ssl.certificateAuthorities" "${OSD_CA_FILE}"
+        set_yaml_prop_json "${tmp_conf}" "opensearch.ssl.certificateAuthorities" \
+            "$(jq -cn --arg v "${OSD_CA_FILE}" '[$v]')"
 
         # Verify the OpenSearch certificates against the CA and the host names,
         # unless a verification mode was already chosen.
@@ -278,7 +265,8 @@ function write_config () {
     fi
 
     if [ "${hosts_set}" == "yes" ]; then
-        set_yaml_list "${tmp_conf}" "opensearch.hosts" "${opensearch_hosts[@]}"
+        set_yaml_prop_json "${tmp_conf}" "opensearch.hosts" \
+            "$(jq -cn '$ARGS.positional' --args "${opensearch_hosts[@]}")"
     fi
 
     for i in "${!keys[@]}"; do
@@ -296,7 +284,7 @@ function write_config () {
 
 parse_args "$@"
 
-[ "$(id -u)" -eq 0 ] || die "must be run as root: sudo ${SNAP_INSTANCE_NAME}.setup"
+[ "$(id -u)" -eq 0 ] || die "must be run as root: sudo opensearch-dashboards.setup"
 
 if [ ! -d "${OPENSEARCH_DASHBOARDS_PATH_CERTS}" ]; then
     mkdir -p "${OPENSEARCH_DASHBOARDS_PATH_CERTS}"
@@ -307,7 +295,7 @@ fi
 write_config
 
 echo "Updated ${OSD_CONF_FILE}"
-service="${SNAP_INSTANCE_NAME}.opensearch-dashboards-daemon"
+service="opensearch-dashboards.opensearch-dashboards-daemon"
 if snapctl restart "${service}"; then
     echo "Restarted ${service}"
 else
