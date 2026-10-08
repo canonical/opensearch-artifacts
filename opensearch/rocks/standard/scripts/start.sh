@@ -2,16 +2,15 @@
 
 set -eux
 
-CLUSTER_NAME="${CLUSTER_NAME:-opensearch-dev}"
-NODE_NAME="${NODE_NAME:-node-0}"
-NODE_ROLES="${NODE_ROLES:-cluster_manager,data}"
+# Settings of opensearch.yml. Those without a default are only set when given,
+# OpenSearch defaults apply otherwise. network.host binds the loopback
+# interface too, for the tools connecting to localhost.
+CLUSTER_NAME="${CLUSTER_NAME:-opensearch-cluster}"
+NODE_NAME="${NODE_NAME:-}"
+NODE_ROLES="${NODE_ROLES:-}"
 INITIAL_CM_NODES="${INITIAL_CM_NODES:-}"
-NETWORK_HOST="${NETWORK_HOST:-_local_,_site_}"
+NETWORK_HOST="${NETWORK_HOST:-0.0.0.0}"
 SEED_HOSTS="${SEED_HOSTS:-}"
-
-# Generated passwords, readable by the _daemon_ user only
-PASSWORDS_FILE="${OPENSEARCH_PATH_CONF}/init_users_pass.yaml"
-
 
 function set_yaml_prop() {
     local target_file="${1}"
@@ -21,88 +20,40 @@ function set_yaml_prop() {
     /usr/bin/python3 /usr/bin/set_conf.py --file "${target_file}" --key "${key}" --value "${value}"
 }
 
-function network_host() {
-    echo "[ \"_site_\", \"$(hostname -i)\" ]"
-}
+# Format a comma separated list as a YAML list
+function yaml_list() {
+    local formatted=""
+    local item
+    local -a items
 
-function node_roles() {
-    formatted_roles=""
-
-    IFS=',' read -r -a roles <<< "${NODE_ROLES}"
-    for role in "${roles[@]}"; do
-        if [ -n "${formatted_roles}" ]; then
-            formatted_roles="${formatted_roles}, "
+    IFS=',' read -r -a items <<< "${1}"
+    for item in "${items[@]}"; do
+        if [ -n "${formatted}" ]; then
+            formatted="${formatted}, "
         fi
-        formatted_roles="${formatted_roles}\"$(echo -e "${role}" | tr -d '[:space:]')\""
+        formatted="${formatted}\"$(echo -e "${item}" | tr -d '[:space:]')\""
     done
 
-    echo "[ ${formatted_roles} ]"
+    echo "[ ${formatted} ]"
 }
 
-function init_cm_nodes() {
-    formatted_nodes=""
-
-    IFS=',' read -r -a nodes <<< "${INITIAL_CM_NODES}"
-    for node in "${nodes[@]}"; do
-        if [ -n "${formatted_nodes}" ]; then
-            formatted_nodes="${formatted_nodes}, "
-        fi
-        formatted_nodes="${formatted_nodes}\"$(echo -e "${node}" | tr -d '[:space:]')\""
-    done
-
-    echo "[ ${formatted_nodes} ]"
-}
-
-function seed_hosts() {
-    formatted_hosts=""
-
-    if [[ "${NODE_ROLES}" == *"cluster_manager"* ]]; then
-        formatted_hosts="\"$(hostname -i)\""
-    fi
-
-    IFS=',' read -r -a hosts <<< "${SEED_HOSTS}"
-    for host in "${hosts[@]}"; do
-        if [ -n "${formatted_hosts}" ]; then
-            formatted_hosts="${formatted_hosts}, "
-        fi
-        formatted_hosts="${formatted_hosts}\"$(echo -e "${host}" | tr -d '[:space:]')\""
-    done
-
-    echo "[ ${formatted_hosts} ]"
-}
-
-# Password of each internal user (admin, kibanaserver, ...): the value of
-# OPENSEARCH_INITIAL_<USER>_PASSWORD when set, generated otherwise and stored
-# in ${PASSWORDS_FILE}. Done once, on the first start, which creates the
-# security index from internal_users.yml: ${PASSWORDS_FILE} existing (empty
-# when all the passwords are given) means it is done. The demo configuration
-# sets the admin password, the others are set here.
+# Password of each internal user (kibanaserver, logstash, ...) given in
+# OPENSEARCH_INITIAL_<USER>_PASSWORD, the others keep their demo password.
+# Like the admin password, set by the demo configuration, it only counts on
+# the first start, which creates the security index from internal_users.yml.
 function set_initial_passwords() {
     local internal_users="${OPENSEARCH_PATH_CONF}/opensearch-security/internal_users.yml"
     local hash_tool="${OPENSEARCH_PLUGINS}/opensearch-security/tools/hash.sh"
     local user var hash
     local -a users
 
-    if [ -f "${PASSWORDS_FILE}" ]; then
-        return
-    fi
-
     mapfile -t users < <(/usr/bin/python3 /usr/bin/init_users.py users --file "${internal_users}")
-
-    # moved into place once the demo configuration is installed
-    (umask 077 && : > "${PASSWORDS_FILE}.tmp")
 
     # keep the passwords out of the xtrace output
     { set +x; } 2>/dev/null
     for user in "${users[@]}"; do
         var="OPENSEARCH_INITIAL_$(echo "${user}" | tr '[:lower:]-' '[:upper:]_')_PASSWORD"
-        if [ -z "${!var:-}" ]; then
-            export "${var}=$(/usr/bin/python3 /usr/bin/init_users.py generate-password)"
-            # quoted: the password stays a string
-            printf '%s: "%s"\n' "${user}" "${!var}" >> "${PASSWORDS_FILE}.tmp"
-        fi
-
-        if [ "${user}" = "admin" ]; then
+        if [ "${user}" = "admin" ] || [ -z "${!var:-}" ]; then
             continue
         fi
 
@@ -115,8 +66,6 @@ function set_initial_passwords() {
             --file "${internal_users}" --user "${user}" --hash "${hash}"
     done
     set -x
-
-    echo "Initial passwords not given are generated in ${PASSWORDS_FILE}"
 }
 
 function setup_security_plugin() {
@@ -135,9 +84,6 @@ function setup_security_plugin() {
         set_initial_passwords
         echo "Enabling execution of install_demo_configuration.sh for OpenSearch Security Plugin"
         /bin/bash "${security_plugin}/tools/install_demo_configuration.sh" -y -i -s
-        if [ -f "${PASSWORDS_FILE}.tmp" ]; then
-            mv "${PASSWORDS_FILE}.tmp" "${PASSWORDS_FILE}"
-        fi
     fi
 
     if [ "${DISABLE_SECURITY_PLUGIN:-}" = "true" ]; then
@@ -163,17 +109,26 @@ done < <(env)
 conf="${OPENSEARCH_PATH_CONF}/opensearch.yml"
 
 set_yaml_prop "${conf}" "cluster.name" "${CLUSTER_NAME}"
-set_yaml_prop "${conf}" "node.name" "${NODE_NAME}"
-set_yaml_prop "${conf}" "node.roles" "$(node_roles)"
-
-if [[ -n "${INITIAL_CM_NODES}" ]] && [[ "${NODE_ROLES}" == *"cluster_manager"* ]]; then
-    set_yaml_prop "${conf}" "cluster.initial_cluster_manager_nodes" "$(init_cm_nodes)"
-fi
-
-set_yaml_prop "${conf}" "network.host" "$(network_host)"
-set_yaml_prop "${conf}" "discovery.seed_hosts" "$(seed_hosts)"
+set_yaml_prop "${conf}" "network.host" "$(yaml_list "${NETWORK_HOST}")"
 set_yaml_prop "${conf}" "path.data" "${OPENSEARCH_PATH_DATA}"
 set_yaml_prop "${conf}" "path.logs" "${OPENSEARCH_PATH_LOGS}"
+
+if [ -n "${NODE_NAME}" ]; then
+    set_yaml_prop "${conf}" "node.name" "${NODE_NAME}"
+fi
+if [ -n "${NODE_ROLES}" ]; then
+    set_yaml_prop "${conf}" "node.roles" "$(yaml_list "${NODE_ROLES}")"
+fi
+
+# Without node.roles, a node has the default roles, cluster_manager included
+if [[ -n "${INITIAL_CM_NODES}" ]] \
+        && [[ -z "${NODE_ROLES}" || "${NODE_ROLES}" == *"cluster_manager"* ]]; then
+    set_yaml_prop "${conf}" "cluster.initial_cluster_manager_nodes" "$(yaml_list "${INITIAL_CM_NODES}")"
+fi
+
+if [ -n "${SEED_HOSTS}" ]; then
+    set_yaml_prop "${conf}" "discovery.seed_hosts" "$(yaml_list "${SEED_HOSTS}")"
+fi
 sed -i "s@=logs/@=${OPENSEARCH_PATH_LOGS}/@" "${OPENSEARCH_PATH_CONF}/jvm.options"
 sed -i "s@-javaagent:agent/@-javaagent:${OPENSEARCH_HOME}/agent/@" "${OPENSEARCH_PATH_CONF}/jvm.options"
 

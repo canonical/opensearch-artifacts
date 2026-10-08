@@ -68,8 +68,33 @@ docker run \
 
 curl -k -u admin:"<strong-password>" https://localhost:9200
 
-`OPENSEARCH_INITIAL_ADMIN_PASSWORD` is optional: without it, a password is
-generated (see [Security](#security)).
+Like with the upstream image, `OPENSEARCH_INITIAL_ADMIN_PASSWORD` is required
+unless the security plugin is disabled (see [Security](#security)).
+
+Like with the upstream image, a node needs discovery settings to start: here
+`INITIAL_CM_NODES`, the node bootstrapping the cluster. For a single node, you
+can pass `-e discovery.type=single-node` instead. Without either, the node stops
+on a failed bootstrap check: "the default discovery settings are unsuitable for
+production use".
+
+### Configuration
+
+On each start, these variables set their setting in
+`/usr/share/opensearch/config/opensearch.yml`. Lists are comma separated:
+
+| Variable | Setting | Default |
+|---|---|---|
+| `CLUSTER_NAME` | `cluster.name` | `opensearch-cluster` |
+| `NODE_NAME` | `node.name` | the container hostname |
+| `NODE_ROLES` | `node.roles` | the OpenSearch default roles |
+| `INITIAL_CM_NODES` | `cluster.initial_cluster_manager_nodes`, on cluster manager eligible nodes only | |
+| `NETWORK_HOST` | `network.host` | `0.0.0.0`, which includes `localhost` |
+| `SEED_HOSTS` | `discovery.seed_hosts` | |
+
+Like with the upstream image, any other setting can be passed as a variable
+named after it, e.g. `-e indices.query.bool.max_clause_count=2048`. These
+variables are passed to OpenSearch as `-E` options, which take precedence over
+`opensearch.yml`.
 
 ### Security
 
@@ -80,18 +105,20 @@ installs the demo certificates and sets the password of the `admin` user.
 
 | Variable | Description |
 |---|---|
-| `OPENSEARCH_INITIAL_ADMIN_PASSWORD` | Password of the `admin` user. Generated when not set. It must be at least 8 characters long, contain an uppercase letter, a lowercase letter, a digit and a special character, and be rated strong by [zxcvbn](https://lowe.github.io/tryzxcvbn). |
-| `OPENSEARCH_INITIAL_<USER>_PASSWORD` | Password of the other users of the demo configuration: `ANOMALYADMIN`, `KIBANARO`, `KIBANASERVER`, `LOGSTASH`, `READALL`, `SNAPSHOTRESTORE`, e.g. `OPENSEARCH_INITIAL_KIBANASERVER_PASSWORD`. Generated when not set. |
+| `OPENSEARCH_INITIAL_ADMIN_PASSWORD` | Password of the `admin` user, required. It must be at least 8 characters long, contain an uppercase letter, a lowercase letter, a digit and a special character, and be rated strong by [zxcvbn](https://lowe.github.io/tryzxcvbn). |
+| `OPENSEARCH_INITIAL_<USER>_PASSWORD` | Password of the other users of the demo configuration: `ANOMALYADMIN`, `KIBANARO`, `KIBANASERVER`, `LOGSTASH`, `READALL`, `SNAPSHOTRESTORE`, e.g. `OPENSEARCH_INITIAL_KIBANASERVER_PASSWORD`. When not set, the user keeps its demo password, the same as its name, like with the upstream image. |
 | `DISABLE_INSTALL_DEMO_CONFIG` | Set to `true` to skip the demo configuration, e.g. when you mount your own certificates and security configuration. |
 | `DISABLE_SECURITY_PLUGIN` | Set to `true` to start OpenSearch with the security plugin disabled (plain HTTP, no authentication). The demo configuration is then skipped and no password is needed. |
 
-The passwords are set on the first start only. The generated ones are stored
-in `/usr/share/opensearch/config/init_users_pass.yaml`, readable by the
-`_daemon_` user only, as `<user>: "<password>"` lines:
+The demo passwords are public: set the password of every user you rely on.
 
-```bash
-docker exec <container> cat /usr/share/opensearch/config/init_users_pass.yaml
-```
+Like with the upstream image, the passwords are set by the first start only,
+which creates the security index in the data directory. A container that
+reuses the data directory, e.g. with `-v opensearch:/usr/share/opensearch/data`,
+keeps the passwords of the first one: the `OPENSEARCH_INITIAL_<USER>_PASSWORD`
+variables no longer change them. Its demo configuration still requires an
+`OPENSEARCH_INITIAL_ADMIN_PASSWORD`, which does not change the admin password
+either: pass the same one to avoid confusion.
 
 The users are stored in the security index of the cluster, created by the first
 node: in a multi-node cluster, the passwords of that node apply to all of them.
