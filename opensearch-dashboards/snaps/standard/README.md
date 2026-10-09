@@ -28,7 +28,8 @@ The daemon starts as soon as the snap is installed, connecting to an
 OpenSearch instance on `https://localhost:9200` with the default credentials
 (user: `kibanaserver`, password: `kibanaserver`). Until the OpenSearch CA is
 configured, the OpenSearch certificates are not verified
-(`opensearch.ssl.verificationMode: none`, the upstream default).
+(`opensearch.ssl.verificationMode: none`, as in the upstream configuration
+file).
 
 **The OpenSearch snap generates a random `kibanaserver` password and its own CA
 on install, so configuring them is a required first step.** Until then,
@@ -54,10 +55,15 @@ refreshes:
 ```
 
 It is changed with the `setup` application, which writes the settings to that
-file and restarts the daemon. Settings are passed as with the upstream
-`bin/opensearch-dashboards`: `--<setting>=<value>`, where `<setting>` is any key
+file. Settings are passed as with the upstream `bin/opensearch-dashboards`:
+`--<setting>=<value>`, where `<setting>` is any key
 of `opensearch_dashboards.yml`, e.g. `--server.host=0.0.0.0`. Unlike the upstream
-command line, the settings are kept in the configuration file.
+command line, the settings are kept in the configuration file. The daemon must
+be restarted for the new settings to be applied:
+
+```
+sudo snap restart opensearch-dashboards.opensearch-dashboards-daemon
+```
 
 The value is written as is, as a string, which OpenSearch Dashboards converts to
 the type of the setting (e.g. `--server.port=5602`). A value in brackets is a
@@ -69,16 +75,19 @@ change.
 Two arguments are handled by the snap:
 
  - `--opensearch.hosts=<host> [<host> ...]` -- the OpenSearch hosts. Further
-   arguments and comma separated values are added to the list; the scheme
-   defaults to `https://` and the port to `9200`.
- - `--opensearch-ca=<PEM>` -- not a setting: the CA that signed the OpenSearch HTTP certificates. It is
-   stored in `.../common/etc/opensearch-dashboards/certificates/opensearch-ca.pem`
-   and Dashboards then verifies the OpenSearch certificates against it and
+   arguments, comma separated values and the items of a YAML list are added
+   to the list; the scheme defaults to `https://` and the port to `9200`.
+ - `--opensearch-ca=<PEM>` -- not a setting: the CA that signed the OpenSearch
+   HTTP certificates, or several CAs. It is stored in
+   `.../common/etc/opensearch-dashboards/certificates/opensearch-ca.pem`, and
+   Dashboards then verifies the OpenSearch certificates against it and
    checks that they are valid for the hosts used
    (`opensearch.ssl.verificationMode: full`, unless set otherwise). The
    certificates of the OpenSearch snap cover `localhost`, the hostname and the
    IP addresses of each node; for certificates that do not, use
    `--opensearch.ssl.verificationMode=certificate` to only check the CA.
+   Node.js does not match an IPv6 address, e.g. `[::1]`, with the addresses of
+   a certificate: use a host name for those hosts, or the `certificate` mode.
 
 For example, with the OpenSearch snap installed on the same machine, which
 generates the password of `kibanaserver` and its CA on install:
@@ -118,9 +127,10 @@ sudo snap restart opensearch-dashboards.opensearch-dashboards-daemon
 #### Plugins:
 
 Plugins are managed with the upstream `opensearch-dashboards-plugin` tool through
-the `plugin` application. A plugin must be built for the same version of
-OpenSearch Dashboards. Install it from a URL, or from a file in the snap's
-common directory, then restart the daemon to load it:
+the `plugin` application. A plugin should be built for the same version of
+OpenSearch Dashboards: as upstream, one built for another version is installed
+and loaded, with a warning. Install it from a URL, or from a file in the
+snap's common directory, then restart the daemon to load it:
 
 ```
 sudo opensearch-dashboards.plugin list
@@ -135,10 +145,12 @@ The plugins bundled with the snap must remain installed: their removal is
 rejected, without changing anything.
 
 The plugins are stored with each snap revision. A refresh removes, from the new
-revision only, the custom plugins it cannot load: those built for another
-version of OpenSearch Dashboards, those with the id of a bundled plugin, and
-those requiring a removed plugin. Reinstall them once available for the new
-version. A revert gets back the previous revision's plugins.
+revision only, the custom plugins it cannot load: those without a valid
+`opensearch_dashboards.json`, those with the id of a bundled plugin, and those
+named like a bundled plugin, which remains; as well as the links that are not to
+a plugin bundled with the snap. The daemon lists them as warnings in
+`snap logs opensearch-dashboards` each time it starts. A revert gets back the
+previous revision's plugins.
 
 ### Testing the OpenSearch Dashboards setup:
 

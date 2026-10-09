@@ -11,7 +11,7 @@ suites:
     summary: General integration tests
     prepare-each: |
       apt update
-      apt install -y curl yq
+      apt install -y curl jq python3 yq
 
       # Required kernel parameters for the OpenSearch backend.
       sysctl -w vm.swappiness=0
@@ -21,8 +21,7 @@ suites:
       # Install the Dashboards snap under test.
       snap install "$CRAFT_ARTIFACT" --dangerous
 
-      # TODO: revert to 3/edge once the new OpenSearch UX is merged.
-      snap install opensearch --channel=3/edge/pr-33
+      snap install opensearch --channel=3/edge
 
       # Connect the interfaces the opensearch snap needs.
       snap connect opensearch:log-observe

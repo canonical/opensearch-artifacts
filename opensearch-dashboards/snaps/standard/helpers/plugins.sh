@@ -7,6 +7,9 @@
 OSD_PLUGINS="${SNAP_DATA}/usr/share/opensearch-dashboards/plugins"
 OSD_SHIPPED_PLUGINS="${SNAP}/usr/share/opensearch-dashboards/shipped-plugins"
 OSD_SHIPPED_LINK_DIR="${SNAP_CURRENT}/usr/share/opensearch-dashboards/shipped-plugins"
+# The custom plugins removed by the refresh to this revision, which the daemon
+# reports each time it starts: snapd discards the output of a successful hook.
+OSD_REMOVED_PLUGINS="${SNAP_DATA}/removed-plugins.log"
 
 
 function as_snap_daemon () {
@@ -32,36 +35,22 @@ function link_shipped_plugins () {
 }
 
 
-# 3.8.0 from 3.8.0, 3.8 or v3.8.0-rc1, as semver.coerce, which upstream uses.
-function coerce_version () {
-    local version
-
-    version="$(grep -oE '[0-9]+(\.[0-9]+){0,2}' <<< "${1}" | head -n 1)"
-    [ -n "${version}" ] || return 0
-    while [[ "${version}" != *.*.* ]]; do
-        version="${version}.0"
-    done
-    echo "${version}"
+# Why OpenSearch Dashboards can not load a custom plugin, or nothing. As
+# upstream, a plugin built for another version is loaded, with a warning. The
+# manifest is read as snap_daemon, which owns the plugins.
+function incompatibility () {
+    as_snap_daemon jq -e '.id | strings' "${1}/opensearch_dashboards.json" > /dev/null 2>&1 \
+        || echo "missing or invalid opensearch_dashboards.json"
 }
 
 
-# Why a custom plugin can not be loaded by this revision, or nothing.
-function incompatibility () {
-    local manifest="${1}/opensearch_dashboards.json"
-    local wanted current
-
-    jq -e '.id | strings' "${manifest}" > /dev/null 2>&1 \
-        || { echo "missing or invalid opensearch_dashboards.json"; return; }
-
-    wanted="$(jq -r '.opensearchDashboardsVersion // empty' "${manifest}")"
-    # Upstream accepts this value with any version.
-    [ "${wanted}" != "opensearchDashboards" ] || return 0
-
-    current="$(jq -r .version "${SNAP}/usr/share/opensearch-dashboards/package.json")"
-    if [ -z "$(coerce_version "${wanted}")" ] \
-            || [ "$(coerce_version "${wanted}")" != "$(coerce_version "${current}")" ]; then
-        echo "built for OpenSearch Dashboards ${wanted:-unknown}, this snap is ${current}"
-    fi
+# Remove a plugin as snap_daemon, which owns the plugins: root can not delete
+# the files of another user under strict confinement. A plugin copied by root
+# is first handed over to snap_daemon; root can not enter the directories of
+# snap_daemon without permissions for the group, which snap_daemon can delete.
+function remove_plugin () {
+    [ -L "${1}" ] || chown -R snap_daemon "${1}" 2> /dev/null || true
+    as_snap_daemon rm -rf -- "${1}"
 }
 
 
@@ -69,8 +58,11 @@ function incompatibility () {
 # plugins. Only this revision's data is changed: a revert gets back the
 # previous revision's plugins.
 function ensure_plugins_dir () {
-    local path name id reason required changed
-    local -A bundled_ids=() custom_ids=() removed_ids=() reasons=()
+    local path name id reason
+    local -A bundled_ids=() reasons=()
+
+    # Left by the refresh to the previous revision.
+    rm -f "${OSD_REMOVED_PLUGINS}"
 
     for path in "${OSD_SHIPPED_PLUGINS}"/*/; do
         id="$(jq -r '.id // empty' "${path}/opensearch_dashboards.json" 2> /dev/null || true)"
@@ -98,41 +90,18 @@ function ensure_plugins_dir () {
         fi
 
         reason="$(incompatibility "${path}")"
-        id="$(jq -r '.id // empty' "${path}/opensearch_dashboards.json" 2> /dev/null || true)"
+        id="$(as_snap_daemon jq -r '.id // empty' "${path}/opensearch_dashboards.json" 2> /dev/null || true)"
         if [ -z "${reason}" ] && [ -n "${id}" ] && [ -n "${bundled_ids[${id}]+x}" ]; then
             reason="its id ${id} is the one of a plugin bundled with this snap"
         fi
 
-        if [ -n "${reason}" ]; then
-            reasons["${name}"]="${reason}"
-            [ -z "${id}" ] || removed_ids["${id}"]=1
-        else
-            custom_ids["${name}"]="${id}"
-        fi
-    done
-
-    # A custom plugin requiring a removed one can not start either.
-    changed=1
-    while [ "${changed}" -eq 1 ]; do
-        changed=0
-        for name in "${!custom_ids[@]}"; do
-            while read -r required; do
-                if [ -n "${required}" ] && [ -n "${removed_ids[${required}]+x}" ]; then
-                    reasons["${name}"]="it requires the removed plugin ${required}"
-                    [ -z "${custom_ids[${name}]}" ] || removed_ids["${custom_ids[${name}]}"]=1
-                    unset "custom_ids[${name}]"
-                    changed=1
-                    break
-                fi
-            done < <(jq -r '.requiredPlugins // [] | .[]' \
-                "${OSD_PLUGINS}/${name}/opensearch_dashboards.json")
-        done
+        [ -z "${reason}" ] || reasons["${name}"]="${reason}"
     done
 
     for name in "${!reasons[@]}"; do
-        as_snap_daemon rm -rf -- "${OSD_PLUGINS:?}/${name}"
+        remove_plugin "${OSD_PLUGINS:?}/${name}"
         echo "Removed plugin ${name} from revision ${SNAP_REVISION}: ${reasons[${name}]}." \
-            "The previous revision keeps it."
+            "The previous revision keeps it." | tee -a "${OSD_REMOVED_PLUGINS}"
     done
 
     link_shipped_plugins

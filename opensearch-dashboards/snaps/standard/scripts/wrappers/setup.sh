@@ -10,7 +10,7 @@ usage() {
 cat << EOF
 usage: sudo opensearch-dashboards.setup [--<setting>=<value> ...] [HOST ...]
 
-Configures OpenSearch Dashboards and restarts it. Settings are written to:
+Configures OpenSearch Dashboards. Settings are written to:
   ${OSD_CONF_FILE}
 
 --<setting>=<value>   Sets an OpenSearch Dashboards setting, as the upstream
@@ -30,12 +30,16 @@ Configures OpenSearch Dashboards and restarts it. Settings are written to:
 
 --opensearch-ca=<PEM>
         PEM content of the CA that signed the OpenSearch HTTP certificates,
-        e.g. --opensearch-ca="\$(cat /path/to/root-ca.pem)". It is stored in
-        ${OSD_CA_FILE} and trusted for
-        connections to OpenSearch (verificationMode "full" unless set: the
-        OpenSearch certificates must also be valid for the hosts used).
+        e.g. --opensearch-ca="\$(cat /path/to/root-ca.pem)", or of several
+        CAs. It is stored in ${OSD_CA_FILE} and trusted for
+        connections to OpenSearch
+        (verificationMode "full" unless set: the OpenSearch certificates must
+        also be valid for the hosts used).
 
   -h, --help    Shows this help menu
+
+The daemon must be restarted for the new settings to be applied:
+  sudo snap restart opensearch-dashboards.opensearch-dashboards-daemon
 EOF
 }
 
@@ -105,11 +109,15 @@ declare -a opensearch_hosts=()
 hosts_set="no"
 ca_content=""
 last_key=""
+# Temporary files of this run, removed on exit.
+tmp_conf=""
+tmp_ca_dir=""
+tmp_ca=""
 
 
 function add_setting () {
     local arg="${1}"
-    local name value key
+    local name value key items json
 
     name="${arg%%=*}"
     value="${arg#*=}"
@@ -132,7 +140,15 @@ function add_setting () {
         hosts_set="yes"
         opensearch_hosts=()
         if [[ "${value}" =~ ^\[(.*)\]$ ]]; then
-            value="${BASH_REMATCH[1]//\"/}"
+            items="${BASH_REMATCH[1]}"
+            # A YAML list, or a list of unquoted URLs, e.g. [https://[::1]:9200],
+            # which is not valid YAML.
+            if json="$(printf '%s' "${value}" | "${SNAP}"/usr/bin/yq -c '.' 2>/dev/null)" \
+                    && [ "$(jq -r 'type' <<< "${json}")" == "array" ]; then
+                value="$(jq -r 'map(tostring) | join(",")' <<< "${json}")"
+            else
+                value="${items//\"/}"
+            fi
         fi
         add_hosts "${value}"
     else
@@ -181,31 +197,56 @@ function parse_args () {
 }
 
 
+# Store the certificates of the PEM content, without anything else pasted along,
+# e.g. a private key, after checking each of them.
 function install_ca () {
-    local tmp_ca
+    local line count=0 i in_cert="no"
+
+    tmp_ca_dir="$(mktemp -d -p "${OPENSEARCH_DASHBOARDS_PATH_CERTS}")"
+    while IFS= read -r line; do
+        line="${line%"${line##*[![:space:]]}"}"
+        if [ "${line}" = "-----BEGIN CERTIFICATE-----" ]; then
+            count=$((count + 1))
+            in_cert="yes"
+        fi
+        [ "${in_cert}" = "no" ] || printf '%s\n' "${line}" >> "${tmp_ca_dir}/${count}.pem"
+        [ "${line}" != "-----END CERTIFICATE-----" ] || in_cert="no"
+    done <<< "${ca_content}"
+
+    [ "${count}" -gt 0 ] || die "--opensearch-ca is not a valid PEM certificate"
+    # Only parse the certificates: the system CA bundle, which openssl loads by
+    # default, is unused and not readable by this app.
+    for ((i = 1; i <= count; i++)); do
+        SSL_CERT_FILE=/dev/null openssl x509 -in "${tmp_ca_dir}/${i}.pem" -noout 2>/dev/null \
+            || die "certificate ${i} of --opensearch-ca is not a valid PEM certificate"
+    done
 
     tmp_ca="$(mktemp -p "${OPENSEARCH_DASHBOARDS_PATH_CERTS}")"
-    printf '%s\n' "${ca_content}" > "${tmp_ca}"
-
-    # Only parse the certificate: the system CA bundle, which openssl loads by
-    # default, is unused and not readable by this app.
-    if ! SSL_CERT_FILE=/dev/null openssl x509 -in "${tmp_ca}" -noout 2>/dev/null; then
-        rm -f "${tmp_ca}"
-        die "--opensearch-ca is not a valid PEM certificate"
-    fi
-
+    for ((i = 1; i <= count; i++)); do
+        cat "${tmp_ca_dir}/${i}.pem" >> "${tmp_ca}"
+    done
     mv "${tmp_ca}" "${OSD_CA_FILE}"
     set_access_restrictions "${OSD_CA_FILE}" 660
+
     echo "Stored the OpenSearch CA in ${OSD_CA_FILE}:"
-    SSL_CERT_FILE=/dev/null openssl x509 -in "${OSD_CA_FILE}" -noout -subject -enddate
+    for ((i = 1; i <= count; i++)); do
+        SSL_CERT_FILE=/dev/null openssl x509 -in "${tmp_ca_dir}/${i}.pem" -noout -subject -enddate \
+            | sed 's/^/  /'
+    done
 }
 
 
 function write_config () {
-    local tmp_conf i mode
+    local i mode
 
     tmp_conf="$(mktemp -p "${OPENSEARCH_DASHBOARDS_PATH_CONF}")"
-    cp "${OSD_CONF_FILE}" "${tmp_conf}"
+    if [ -f "${OSD_CONF_FILE}" ]; then
+        cp "${OSD_CONF_FILE}" "${tmp_conf}"
+    else
+        echo "warning: ${OSD_CONF_FILE} is missing, the default configuration is restored" >&2
+        cp "${SNAP}"/etc/opensearch-dashboards/opensearch_dashboards.yml "${tmp_conf}"
+        set_default_settings "${tmp_conf}"
+    fi
 
     if [ -n "${ca_content}" ]; then
         set_yaml_prop_json "${tmp_conf}" "opensearch.ssl.certificateAuthorities" \
@@ -237,9 +278,36 @@ function write_config () {
 }
 
 
+# Node.js does not match an IPv6 address with the IP addresses of a
+# certificate, which verificationMode "full", the default when it is not set,
+# requires.
+function warn_ipv6_hosts () {
+    local mode
+
+    mode="$(get_yaml_prop "${OSD_CONF_FILE}" "opensearch.ssl.verificationMode")"
+    if [ "${mode:-full}" == "full" ] \
+            && get_yaml_prop "${OSD_CONF_FILE}" "opensearch.hosts" | grep -q '://\['; then
+        echo "warning: the certificate of an IPv6 address of opensearch.hosts fails the" \
+            "verification: use a host name, or --opensearch.ssl.verificationMode=certificate" >&2
+    fi
+}
+
+
+function cleanup () {
+    [ -z "${tmp_conf}" ] || rm -f -- "${tmp_conf}"
+    [ -z "${tmp_ca_dir}" ] || rm -rf -- "${tmp_ca_dir}"
+    [ -z "${tmp_ca}" ] || rm -f -- "${tmp_ca}"
+}
+
+
 parse_args "$@"
 
 [ "$(id -u)" -eq 0 ] || die "must be run as root: sudo opensearch-dashboards.setup"
+
+trap cleanup EXIT
+# One run at a time: each one rewrites the whole configuration.
+exec 9< "${OPENSEARCH_DASHBOARDS_PATH_CONF}"
+flock 9
 
 if [ ! -d "${OPENSEARCH_DASHBOARDS_PATH_CERTS}" ]; then
     mkdir -p "${OPENSEARCH_DASHBOARDS_PATH_CERTS}"
@@ -248,11 +316,7 @@ fi
 
 [ -z "${ca_content}" ] || install_ca
 write_config
+warn_ipv6_hosts
 
 echo "Updated ${OSD_CONF_FILE}"
-service="opensearch-dashboards.opensearch-dashboards-daemon"
-if snapctl restart "${service}"; then
-    echo "Restarted ${service}"
-else
-    echo "warning: could not restart, run: sudo snap restart ${service}" >&2
-fi
+echo "Restart the daemon to apply: sudo snap restart opensearch-dashboards.opensearch-dashboards-daemon"

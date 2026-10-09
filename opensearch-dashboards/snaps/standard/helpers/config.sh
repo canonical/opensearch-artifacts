@@ -9,6 +9,14 @@ OSD_CA_FILE="${OPENSEARCH_DASHBOARDS_PATH_CERTS}/opensearch-ca.pem"
 source "${OPS_ROOT}"/helpers/set-conf.sh
 
 
+# The settings of the snap on top of the upstream configuration: the local
+# OpenSearch over https, and the data in $SNAP_COMMON.
+function set_default_settings () {
+    set_yaml_prop_json "${1}" "opensearch.hosts" '["https://localhost:9200"]'
+    set_yaml_prop "${1}" "path.data" "${OPENSEARCH_DASHBOARDS_VARLIB}"
+}
+
+
 # Seed the configuration in $SNAP_COMMON when missing, copying the upstream one
 # pointed at the local OpenSearch over https. An existing configuration is
 # never modified.
@@ -22,8 +30,7 @@ function seed_config () {
         "${OPENSEARCH_DASHBOARDS_PATH_CERTS}"
 
     cp -r "${SNAP}"/etc/opensearch-dashboards/. "${OPENSEARCH_DASHBOARDS_PATH_CONF}/"
-    set_yaml_prop_json "${OSD_CONF_FILE}" "opensearch.hosts" '["https://localhost:9200"]'
-    set_yaml_prop "${OSD_CONF_FILE}" "path.data" "${OPENSEARCH_DASHBOARDS_VARLIB}"
+    set_default_settings "${OSD_CONF_FILE}"
 
     chmod 770 "${OPENSEARCH_DASHBOARDS_PATH_CONF}" \
         "${OPENSEARCH_DASHBOARDS_PATH_CERTS}"

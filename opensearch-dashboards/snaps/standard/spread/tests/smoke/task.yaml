@@ -61,7 +61,7 @@ execute: |
     exit 1
   fi
 
-  # Trust the OpenSearch CA; setup restarts the daemon.
+  # Trust the OpenSearch CA, then restart the daemon to apply the settings.
   ca="/var/snap/opensearch/common/etc/opensearch/certificates/root-ca.pem"
   snap run "${snap_name}.setup" \
     --opensearch.hosts="localhost" \
@@ -69,6 +69,7 @@ execute: |
     --opensearch.username=kibanaserver \
     --opensearch.password="${kibanaserver_password}" \
     --server.host=0.0.0.0
+  snap restart "${daemon}"
 
   echo "=== opensearch_dashboards.yml ==="
   cat "${conf}"
@@ -193,5 +194,73 @@ execute: |
     exit 1
   fi
   echo "Dashboards is writing to ${logfile}"
+
+  # --- A custom plugin loads the modules of OpenSearch Dashboards ----------
+  # Custom plugins live in the revision's data: they must still resolve the
+  # packages (@osd/*) and sources (../../../src) of OpenSearch Dashboards.
+  plugin_src="$(mktemp -d)"
+  plugin_dir="${plugin_src}/opensearch-dashboards/smokeTest"
+  mkdir -p "${plugin_dir}/server"
+  jq -n --arg v "${expected_version}" '{id: "smokeTest", version: "1.0.0",
+    opensearchDashboardsVersion: $v, server: true, ui: false}' \
+    > "${plugin_dir}/opensearch_dashboards.json"
+  echo '{"name": "smoke-test", "version": "1.0.0"}' \
+    > "${plugin_dir}/package.json"
+  cat > "${plugin_dir}/server/index.js" << 'EOF'
+  const { schema } = require("@osd/config-schema");
+  require("../../../src/core/server");
+  exports.config = { schema: schema.object({}) };
+  exports.plugin = () => ({
+    setup(core) {
+      core.http.createRouter().get(
+        { path: "/api/smoke_test", validate: false,
+          options: { authRequired: false } },
+        async (context, request, response) =>
+          response.ok({ body: { loaded: true } }));
+    },
+    start() {},
+    stop() {},
+  });
+  EOF
+  plugin_zip="/var/snap/${snap_name}/common/smoke-test.zip"
+  (cd "${plugin_src}" && python3 -m zipfile -c "${plugin_zip}" \
+    opensearch-dashboards)
+  snap run "${snap_name}.plugin" install "file://${plugin_zip}"
+  snap restart "${daemon}"
+
+  plugin_resp=""
+  retry=0
+  until [ "${plugin_resp}" = '{"loaded":true}' ]; do
+    retry=$((retry + 1))
+    if [ "${retry}" -ge 150 ]; then
+      echo "FAIL: the custom plugin was not loaded."
+      dump_diagnostics
+      exit 1
+    fi
+    sleep 2
+    plugin_resp="$(curl -s --max-time 5 \
+      http://localhost:5601/api/smoke_test || true)"
+  done
+  echo "The custom plugin was loaded"
+
+  state="$(curl -s --max-time 5 -u "admin:${admin_password}" "${status_url}" \
+    | jq -r '.status.overall.state // empty' 2>/dev/null || true)"
+  if [ "${state}" != "green" ] && [ "${state}" != "yellow" ]; then
+    echo "FAIL: Dashboards overall state is '${state}' with the custom plugin."
+    dump_diagnostics
+    exit 1
+  fi
+
+  # --- Bundled plugins can not be removed ----------------------------------
+  plugins_dir="/var/snap/${snap_name}/current/usr/share/opensearch-dashboards"
+  plugins_dir="${plugins_dir}/plugins"
+  rc=0
+  snap run "${snap_name}.plugin" remove -qc "${conf}" securityDashboards \
+    || rc=$?
+  if [ "${rc}" -ne 64 ] || [ ! -L "${plugins_dir}/securityDashboards" ]; then
+    echo "FAIL: the bundled securityDashboards plugin was removed (rc=${rc})."
+    exit 1
+  fi
+  echo "Bundled plugins can not be removed"
 
   echo "All smoke tests passed."
