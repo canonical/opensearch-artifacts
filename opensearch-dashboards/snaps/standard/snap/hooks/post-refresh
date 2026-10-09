@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+set -eux
+
+
+source "${OPS_ROOT}"/helpers/plugins.sh
+
+
+# The configuration lives in $SNAP_COMMON and is kept across refreshes.
+ensure_plugins_dir
