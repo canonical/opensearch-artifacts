@@ -144,7 +144,8 @@ execute: |
   cluster_name="$(curl -sk https://127.0.0.1:9200 "${auth[@]}" \
     | jq -r .cluster_name)"
   if [ "${cluster_name}" != "opensearch-cluster" ]; then
-      echo "Error: cluster name is ${cluster_name}, expected opensearch-cluster."
+      echo "Error: cluster name is ${cluster_name}," \
+          "expected opensearch-cluster."
       exit 1
   fi
 
@@ -158,7 +159,8 @@ execute: |
   fi
 
   # The passwords must not reach the logs
-  if docker logs cm0 2>&1 | grep -F -e "${admin_password}" -e "Sm0ke-Kibana"; then
+  if docker logs cm0 2>&1 \
+          | grep -F -e "${admin_password}" -e "Sm0ke-Kibana"; then
       echo "Error: a password is in the logs of cm0."
       exit 1
   fi
@@ -182,10 +184,11 @@ execute: |
   discovery.type: single-node
   EOF
   chmod 444 opensearch.yml
+  conf_dir=/usr/share/opensearch/config
   docker run \
       -d --rm -it \
       -e DISABLE_SECURITY_PLUGIN=true \
-      -v "${PWD}/opensearch.yml:/usr/share/opensearch/config/opensearch.yml:ro" \
+      -v "${PWD}/opensearch.yml:${conf_dir}/opensearch.yml:ro" \
       -p 9203:9200 \
       --name rocfg \
       opensearch:"${version}"
