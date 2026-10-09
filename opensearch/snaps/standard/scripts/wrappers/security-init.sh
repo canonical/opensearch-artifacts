@@ -2,6 +2,7 @@
 
 set -eu
 
+source "${OPS_ROOT}"/helpers/read-option-value.sh
 
 usage() {
 cat << EOF
@@ -22,32 +23,22 @@ tls_priv_key_admin_pass=""
 
 # Args handling
 function parse_args () {
-    for arg in "$@"; do
-        if [ "${arg}" == "--help" ]; then
-            usage
-            exit 0
-        fi
-    done
-
-    # init-security boolean - from the charm, this should be based on a flag on the app data bag.
-    local LONG_OPTS_LIST=(
-        "tls-priv-key-admin-pass"
-    )
-    local opts=$(getopt \
-      --longoptions "$(printf "%s:," "${LONG_OPTS_LIST[@]}")" \
-      --name "$(readlink -f "${BASH_SOURCE}")" \
-      --options "" \
-      -- "$@"
-    )
-    eval set -- "${opts}"
-
-    while [ $# -gt 0 ]; do
-        case $1 in
-            --tls-priv-key-admin-pass) shift
-                tls_priv_key_admin_pass=$1
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --tls-priv-key-admin-pass|--tls-priv-key-admin-pass=*)
+                read_option_value "$@" || return 1
+                tls_priv_key_admin_pass="$option_value"
+                shift "$option_arguments"
+                ;;
+            --help)
+                usage
+                exit 0
+                ;;
+            *)
+                echo "Unknown argument: $1" >&2
+                return 1
                 ;;
         esac
-        shift
     done
 
     # in case those are set through snap.set

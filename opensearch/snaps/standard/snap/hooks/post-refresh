@@ -4,8 +4,10 @@ set -eux
 
 
 source "${OPS_ROOT}"/helpers/snap-logger.sh "hook-post-refresh"
+source "${OPS_ROOT}"/helpers/set-conf.sh
 
 
+# Run commands as the account that owns OpenSearch's writable files.
 function as_snap_daemon () {
     "${SNAP}"/usr/bin/setpriv \
         --clear-groups \
@@ -15,66 +17,130 @@ function as_snap_daemon () {
 }
 
 
+# Keep usable custom plugins and link the plugins bundled with the new snap.
+# Only change this revision's files so snap revert can recover the old plugins.
 function ensure_plugins_dir () {
-    local shipped="${SNAP}/usr/share/opensearch/shipped-plugins"
-    local new_version name plugin descriptor version
+    local shipped_plugins_dir="${SNAP}/usr/share/opensearch/shipped-plugins"
+    local writable_plugins_dir="${SNAP_DATA}/usr/share/opensearch/plugins"
+    local writable_bin_dir="${SNAP_DATA}/usr/share/opensearch/bin"
+    local compatibility_checker="${SNAP}/opt/opensearch/helpers/CheckPluginCompatibility.java"
+    local java_executable="${SNAP}/usr/lib/jvm/java-21-openjdk-${SNAP_ARCH}/bin/java"
+    local plugin_path plugin_directory_name expected_plugin_link removal_list_file path_to_remove plugin_file_kind
+    local -a custom_plugin_paths=() obsolete_or_conflicting_plugin_paths=()
 
-    new_version="$(sed -n "s/^version:[[:space:]]*//p" "${SNAP}/meta/snap.yaml" | tr -d "'\"")"
+    # Keep the expected links to bundled plugins. Collect custom plugins for
+    # checking, and mark obsolete links or conflicting directories for removal.
+    for plugin_path in "${writable_plugins_dir}"/*; do
+        # An empty directory leaves the glob unexpanded; broken links still need checking.
+        [ -e "${plugin_path}" ] || [ -L "${plugin_path}" ] || continue
+        plugin_directory_name="${plugin_path##*/}"
+        # lib/ holds libraries belonging to plugins; it is not itself a plugin.
+        [ "${plugin_directory_name}" = lib ] && continue
+        expected_plugin_link="${SNAP_CURRENT}/usr/share/opensearch/shipped-plugins/${plugin_directory_name}"
 
-    for plugin in "${OPENSEARCH_PLUGINS}"/*; do
-        [ -e "${plugin}" ] || [ -L "${plugin}" ] || continue
-        name="$(basename "${plugin}")"
+        # Preserve a bundled plugin's link only if its destination is the expected one.
+        if [ -d "${shipped_plugins_dir}/${plugin_directory_name}" ] && [ -L "${plugin_path}" ] &&
+           [ "$(readlink "${plugin_path}")" = "${expected_plugin_link}" ]; then
+            continue
+        # Remove other links and directories that would hide a plugin bundled by this snap.
+        elif [ -L "${plugin_path}" ] || [ -d "${shipped_plugins_dir}/${plugin_directory_name}" ]; then
+            obsolete_or_conflicting_plugin_paths+=("${plugin_path}")
+        # Check each remaining custom plugin against the new snap's OpenSearch version.
+        else
+            custom_plugin_paths+=("${plugin_path}")
+        fi
+    done
 
-        if [ -d "${shipped}/${name}" ]; then
-            if [ ! -L "${plugin}" ]; then
-                as_snap_daemon rm -rf "${plugin:?}"
+    # Store paths separated by NUL bytes so spaces and newlines in names are safe.
+    removal_list_file="$(mktemp "${SNAP_DATA}/plugin-relocation.XXXXXXXX")" || return 1
+
+    # Ask the new snap's OpenSearch code which custom plugins cannot be kept.
+    if [ "${#custom_plugin_paths[@]}" -gt 0 ]; then
+        # A checker failure must not block refresh. If checking fails, remove all
+        # unchecked custom copies here; their old copies remain available for revert.
+        if ! as_snap_daemon "${java_executable}" \
+            --class-path "${SNAP}/usr/share/opensearch/lib/*" \
+            "${compatibility_checker}" "${shipped_plugins_dir}" "${SNAP}/usr/share/opensearch/modules" \
+            "${custom_plugin_paths[@]}" > "${removal_list_file}"; then
+            echo "Plugin checker failed; unloading all unverified custom plugins from this revision." >&2
+            printf '%s\0' "${custom_plugin_paths[@]}" > "${removal_list_file}"
+        fi
+    fi
+
+    # Also remove the obsolete links and conflicts found before compatibility checking.
+    if [ "${#obsolete_or_conflicting_plugin_paths[@]}" -gt 0 ]; then
+        printf '%s\0' "${obsolete_or_conflicting_plugin_paths[@]}" >> "${removal_list_file}"
+    fi
+
+    # snapd has already kept the previous revision's files. Remove only the new
+    # copies listed here, leaving the old revision and shared configuration untouched.
+    while IFS= read -r -d '' plugin_path; do
+        plugin_directory_name="${plugin_path##*/}"
+
+        # Remove this plugin's directory, external libraries, and installed commands.
+        # Use its directory name, which can differ from the name in its descriptor.
+        for plugin_file_kind in plugins lib bin; do
+            # Locate each set of files without following a library or bin directory
+            # symlink: its destination could be outside this revision.
+            case "${plugin_file_kind}" in
+                plugins) path_to_remove="${writable_plugins_dir}/${plugin_directory_name}" ;;
+                lib)
+                    [ ! -L "${writable_plugins_dir}/lib" ] || continue
+                    path_to_remove="${writable_plugins_dir}/lib/${plugin_directory_name}" ;;
+                bin)
+                    [ ! -L "${writable_bin_dir}" ] || continue
+                    path_to_remove="${writable_bin_dir}/${plugin_directory_name}" ;;
+            esac
+
+            # Remove existing files and broken links; absent files need no action.
+            if [ -e "${path_to_remove}" ] || [ -L "${path_to_remove}" ]; then
+                as_snap_daemon rm -rf -- "${path_to_remove}" || return 1
             fi
-            continue
-        fi
+        done
+        echo "Unloaded ${plugin_directory_name} from revision ${SNAP_REVISION}; its previous-revision files remain available for revert."
+    done < "${removal_list_file}"
+    rm -f -- "${removal_list_file}"
 
-        if [ -L "${plugin}" ]; then
-            as_snap_daemon rm -f "${plugin}"
-            continue
-        fi
+    # Make every plugin bundled with the new snap visible in the writable plugins directory.
+    for plugin_path in "${shipped_plugins_dir}"/*/; do
+        [ -d "${plugin_path}" ] || continue
+        plugin_directory_name="$(basename "${plugin_path}")"
 
-        descriptor="${plugin}/plugin-descriptor.properties"
-        version=""
-        if [ -f "${descriptor}" ]; then
-            version="$(sed -n "s/^opensearch\.version=//p" "${descriptor}")"
-        fi
-        if [ "${version}" != "${new_version}" ]; then
-            as_snap_daemon rm -rf "${plugin:?}"
-            echo "NOTE: removed ${name} (built for OpenSearch ${version:-unknown}, this snap is ${new_version}). The old copy remains in the previous revision's data directory; reinstall it with 'snap run opensearch.plugin install ${name}' once available for ${new_version}."
-        fi
-    done
-
-    for plugin in "${shipped}"/*/; do
-        name="$(basename "${plugin}")"
-        if [ ! -L "${OPENSEARCH_PLUGINS}/${name}" ]; then
+        # Create links that are missing, including those removed while resolving conflicts.
+        if [ ! -L "${writable_plugins_dir}/${plugin_directory_name}" ]; then
             as_snap_daemon ln -s \
-                "${SNAP_CURRENT}/usr/share/opensearch/shipped-plugins/${name}" \
-                "${OPENSEARCH_PLUGINS}/${name}"
+                "${SNAP_CURRENT}/usr/share/opensearch/shipped-plugins/${plugin_directory_name}" \
+                "${writable_plugins_dir}/${plugin_directory_name}" || return 1
         fi
     done
 }
 
-
-# Link the scripts shipped by this revision into the writable bin/, which
-# also holds the scripts installed by plugins.
+# Make the snap's bundled commands available alongside commands installed by plugins.
 function ensure_bin_dir () {
-    local bin_dir="${SNAP_DATA}/usr/share/opensearch/bin"
-    local script name
+    local writable_bin_dir="${SNAP_DATA}/usr/share/opensearch/bin"
+    local shipped_script_path script_name
 
-    [ -d "${bin_dir}" ] || as_snap_daemon mkdir -p "${bin_dir}"
-    for script in "${SNAP}"/usr/share/opensearch/shipped-bin/*; do
-        name="$(basename "${script}")"
-        if [ ! -L "${bin_dir}/${name}" ]; then
+    # Create the writable bin directory if this revision does not have one yet.
+    [ -d "${writable_bin_dir}" ] || as_snap_daemon mkdir -p "${writable_bin_dir}"
+
+    # Add a link for each command provided by the new snap.
+    for shipped_script_path in "${SNAP}"/usr/share/opensearch/shipped-bin/*; do
+        script_name="$(basename "${shipped_script_path}")"
+
+        # Keep existing links and create any that are missing.
+        if [ ! -L "${writable_bin_dir}/${script_name}" ]; then
             as_snap_daemon ln -s \
-                "${SNAP_CURRENT}/usr/share/opensearch/shipped-bin/${name}" \
-                "${bin_dir}/${name}"
+                "${SNAP_CURRENT}/usr/share/opensearch/shipped-bin/${script_name}" \
+                "${writable_bin_dir}/${script_name}"
         fi
     done
 }
+
+# Restore the active snap's bundled CAs while retaining separately named custom CAs.
+bash "${OPS_ROOT}/helpers/refresh-trust-store.sh" refresh
 
 ensure_plugins_dir
 ensure_bin_dir
+
+# TODO only for OpenSearch 2 - Migrate the upstream heap-dump default; preserve any path chosen by the operator.
+replace_in_file "${OPENSEARCH_PATH_CONF}/jvm.options" '^-XX:HeapDumpPath=data$' "-XX:HeapDumpPath=${OPENSEARCH_VARLOG}/java_heapdump.hprof"

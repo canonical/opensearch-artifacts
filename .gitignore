@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Craft build artifacts
+*.rock
+
+# Local snaps hardlinked in for building against an unpublished snap
+*.snap
