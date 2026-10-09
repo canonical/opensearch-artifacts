@@ -7,6 +7,9 @@ execute: |
   # with demo TLS certificates, and the admin password must be strong.
   admin_password="Sm0ke-Test_Pa55word!"
   auth=(-u "admin:${admin_password}")
+  # A value is read whole: the line after the newline must not become a
+  # setting disabling the security plugin
+  kibanaserver_password=$'Sm0ke-Kibana_Pa55!\nplugins.security.disabled=true'
 
   # A node needs ~30s to answer HTTP even on fast hardware, so poll for
   # readiness instead of sleeping a fixed amount. Until the security index
@@ -24,9 +27,7 @@ execute: |
           sleep 3
       done
       echo "Error: ${name} did not answer on port ${port} within 180s."
-      # OpenSearch logs to a file, not to stdout, so docker logs is useless.
-      docker exec "${name}" \
-          sh -c 'tail -n 50 /usr/share/opensearch/logs/*.log' || true
+      docker logs --tail 50 "${name}" || true
       return 1
   }
 
@@ -50,6 +51,7 @@ execute: |
   container_0_id=$(docker run \
       -d --rm -it \
       -e OPENSEARCH_INITIAL_ADMIN_PASSWORD="${admin_password}" \
+      -e OPENSEARCH_INITIAL_KIBANASERVER_PASSWORD="${kibanaserver_password}" \
       -e NODE_NAME=cm0 \
       -e INITIAL_CM_NODES=cm0 \
       -p 9200:9200 \
@@ -135,6 +137,69 @@ execute: |
   # Plain HTTP must be refused now that TLS is on the REST layer.
   if curl -s --max-time 3 http://127.0.0.1:9200 >/dev/null; then
       echo "Error: REST layer still answers over plain HTTP."
+      exit 1
+  fi
+
+  # The default cluster name of the rock's opensearch.yml
+  cluster_name="$(curl -sk https://127.0.0.1:9200 "${auth[@]}" \
+    | jq -r .cluster_name)"
+  if [ "${cluster_name}" != "opensearch-cluster" ]; then
+      echo "Error: cluster name is ${cluster_name}, expected opensearch-cluster."
+      exit 1
+  fi
+
+  # The given password of a demo user, newline included, is the one set
+  kibanaserver_status="$(curl -sk -o /dev/null -w '%{http_code}' \
+    -u "kibanaserver:${kibanaserver_password}" \
+    https://127.0.0.1:9200/_plugins/_security/authinfo)"
+  if [ "${kibanaserver_status}" != 200 ]; then
+      echo "Error: kibanaserver login returned ${kibanaserver_status}."
+      exit 1
+  fi
+
+  # The passwords must not reach the logs
+  if docker logs cm0 2>&1 | grep -F -e "${admin_password}" -e "Sm0ke-Kibana"; then
+      echo "Error: a password is in the logs of cm0."
+      exit 1
+  fi
+
+  # Without an admin password the container stops, and its logs say why
+  docker run \
+      -d -it \
+      --name nopass \
+      opensearch:"${version}"
+  docker wait nopass
+  if ! docker logs nopass 2>&1 | grep -q "No custom admin password found"; then
+      echo "Error: the logs do not explain the failed start."
+      docker logs --tail 50 nopass
+      exit 1
+  fi
+
+  # A read-only opensearch.yml is kept as is
+  cat > opensearch.yml <<EOF
+  cluster.name: read-only-config
+  network.host: 0.0.0.0
+  discovery.type: single-node
+  EOF
+  chmod 444 opensearch.yml
+  docker run \
+      -d --rm -it \
+      -e DISABLE_SECURITY_PLUGIN=true \
+      -v "${PWD}/opensearch.yml:/usr/share/opensearch/config/opensearch.yml:ro" \
+      -p 9203:9200 \
+      --name rocfg \
+      opensearch:"${version}"
+  for _ in $(seq 1 60); do
+      cluster_name="$(curl -s --max-time 3 http://127.0.0.1:9203 \
+        | jq -r '.cluster_name // empty' 2>/dev/null || true)"
+      if [ -n "${cluster_name}" ]; then
+          break
+      fi
+      sleep 3
+  done
+  if [ "${cluster_name}" != "read-only-config" ]; then
+      echo "Error: cluster name is ${cluster_name}, expected read-only-config."
+      docker logs --tail 50 rocfg || true
       exit 1
   fi
 

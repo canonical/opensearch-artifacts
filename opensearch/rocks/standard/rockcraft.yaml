@@ -45,6 +45,8 @@ environment:
   PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\
     /usr/lib/jvm/java-21-openjdk/bin:/usr/share/opensearch/bin"
 
+  PEBBLE_VERBOSE: "1"
+
 services:
   opensearch:
     override: replace
@@ -184,6 +186,15 @@ parts:
 
       chmod 660 "${CACERTS_DEST}"
 
+      # --- Default configuration ---
+      # The snap ships an opensearch.yml without settings. Like upstream, a
+      # mounted opensearch.yml replaces these defaults, and the variables of
+      # start.sh override them. network.host binds the loopback interface
+      # too, for the tools connecting to localhost.
+      CONF="${PRIME_CONF_DIR}/opensearch.yml"
+      echo "cluster.name: opensearch-cluster" >> "${CONF}"
+      echo "network.host: 0.0.0.0" >> "${CONF}"
+
       # --- JVM options ---
       JVM_OPTS="${PRIME_CONF_DIR}/jvm.options"
       JAVA_LIBRARY_PATH="${KNN_LIB_DIR}:/usr/java/packages/lib:/usr/lib64:/lib64:/lib:/usr/lib"
@@ -198,6 +209,12 @@ parts:
       sed -i "s@^-XX:HeapDumpPath=data\$@-XX:HeapDumpPath=${HEAP_DUMP}@" \
           "${JVM_OPTS}"
       grep -qx -- "-XX:HeapDumpPath=${HEAP_DUMP}" "${JVM_OPTS}"
+
+      # Paths relative to the working directory, made absolute
+      sed -i "s@=logs/@=/usr/share/opensearch/logs/@" "${JVM_OPTS}"
+      sed -i "s@-javaagent:agent/@-javaagent:/usr/share/opensearch/agent/@" \
+          "${JVM_OPTS}"
+      ! grep -E -- "=logs/|-javaagent:agent/" "${JVM_OPTS}"
       chown -R 584792:584792 "${PRIME_CONF_DIR}"
 
       # OpenSearch writes its keystore into the configuration directory on
@@ -212,9 +229,7 @@ parts:
     source: scripts
     organize:
       start.sh: usr/bin/start.sh
-      set_conf.py: usr/bin/set_conf.py
       init_users.py: usr/bin/init_users.py
     stage:
       - usr/bin/start.sh
-      - usr/bin/set_conf.py
       - usr/bin/init_users.py
