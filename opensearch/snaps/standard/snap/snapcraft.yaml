@@ -290,8 +290,6 @@ parts:
       - jq
     stage-packages:
       - openjdk-21-jdk-headless
-    build-environment:
-      - OPS_TARBALL_CACHE_URL: "http://10.35.197.1:8000"
     # yamllint disable rule:line-length
     override-build: |
       update-ca-certificates -f

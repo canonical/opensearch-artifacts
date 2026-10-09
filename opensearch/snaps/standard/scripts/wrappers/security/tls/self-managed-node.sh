@@ -6,10 +6,7 @@ set -eu
 
 source "${OPS_ROOT}"/helpers/snap-logger.sh "self-managed-node"
 source "${OPS_ROOT}"/helpers/set-conf.sh
-<<<<<<< HEAD
-=======
 source "${OPS_ROOT}"/helpers/read-option-value.sh
->>>>>>> 3/edge
 
 usage() {
 cat << EOF
@@ -40,38 +37,12 @@ target_dir=""
 
 # Args handling
 function parse_args () {
-<<<<<<< HEAD
-    local LONG_OPTS_LIST=(
-        "name"
-        "root-password"
-        "node-password"
-        "node-subject"
-        "sans"
-        "rest-with-tls"
-        "target-dir"
-        "help"
-    )
-    # shellcheck disable=SC2155
-    local opts=$(getopt \
-      --longoptions "$(printf "%s:," "${LONG_OPTS_LIST[@]}")" \
-      --name "$(readlink -f "${BASH_SOURCE}")" \
-      --options "" \
-      -- "$@"
-    )
-    eval set -- "${opts}"
-
-    while [ $# -gt 0 ]; do
-        case $1 in
-            --name) shift
-                name=$1
-=======
     while [ "$#" -gt 0 ]; do
         case "$1" in
             --name|--name=*)
                 read_option_value "$@" || return 1
                 name="$option_value"
                 shift "$option_arguments"
->>>>>>> 3/edge
                 ;;
             --root-password|--root-password=*)
                 read_option_value "$@" || return 1
@@ -88,18 +59,10 @@ function parse_args () {
                 node_subject="$option_value"
                 shift "$option_arguments"
                 ;;
-<<<<<<< HEAD
-            --sans) shift
-                sans=$1
-                ;;
-            --rest-with-tls) shift
-                rest_with_tls=$1
-=======
             --sans|--sans=*)
                 read_option_value "$@" || return 1
                 sans="$option_value"
                 shift "$option_arguments"
->>>>>>> 3/edge
                 ;;
             --rest-with-tls|--rest-with-tls=*)
                 read_option_value "$@" || return 1
@@ -181,15 +144,6 @@ fi
 # Pass values with = so they are accepted even when they start with --.
 source \
     "${OPS_ROOT}"/helpers/create-certificate.sh \
-<<<<<<< HEAD
-    --name "${name}" \
-    --root-password "${root_password}" \
-    --password "${node_password}" \
-    --subject "${node_subject}" \
-    --sans "${sans}" \
-    --target-dir "${target_dir}" \
-    --type "node"
-=======
     --name="${name}" \
     --root-password="${root_password}" \
     --password="${node_password}" \
@@ -197,7 +151,6 @@ source \
     --sans="${sans}" \
     --target-dir="${target_dir}" \
     --type=node
->>>>>>> 3/edge
 
 
 # set conf
