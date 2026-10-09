@@ -57,14 +57,36 @@ function configure_qat() {
 }
 
 function start_opensearch () {
-    exit_if_missing_perm "log-observe"
-    exit_if_missing_perm "mount-observe"
-    exit_if_missing_perm "sys-fs-cgroup-service"
-    exit_if_missing_perm "system-observe"
+    warn_if_missing_perm "mount-observe"
 
+    warn_if_missing_perm "log-observe"
+    warn_if_missing_perm "sys-fs-cgroup-service"
+    warn_if_missing_perm "system-observe"
+    # This is not autoconnected
     warn_if_missing_perm "process-control"
 
     configure_qat
+
+    # Revert skips post-refresh, so select this revision's bundled CAs before Java starts.
+    bash "${OPS_ROOT}/helpers/refresh-trust-store.sh"
+
+    # snap revert does not run post-refresh. Recover missing plugin configuration
+    # here, before plugins load, while leaving any existing configuration alone.
+    # Use the installer's account so restored files have the same ownership.
+    "${SNAP}"/usr/bin/setpriv \
+        --clear-groups \
+        --reuid snap_daemon \
+        --regid root -- \
+        "${SNAP}/usr/bin/python3" "${SNAP}/opt/opensearch/helpers/plugin-configuration.py" restore
+
+    # A start interrupted while OpenSearch creates its keystore (e.g. a restart
+    # right after install) leaves this file behind, and every later start then
+    # fails on it. No other OpenSearch process runs at this point.
+    rm -f "${OPENSEARCH_PATH_CONF}/opensearch.keystore.tmp"
+
+    # Grant read access to the shipped plugins through their real path,
+    # which changes with every snap revision.
+    export OPENSEARCH_JAVA_OPTS="${OPENSEARCH_JAVA_OPTS:-} -Dsnap.path=${SNAP} -Djava.security.policy=${OPS_ROOT}/security/shipped-plugins.policy"
 
     "${SNAP}"/usr/bin/setpriv \
         --clear-groups \

@@ -72,19 +72,20 @@ environment:
 
   OPS_ROOT: ${SNAP_CURRENT}/opt/opensearch
 
-  OPENSEARCH_BIN: ${SNAP_CURRENT}/usr/share/opensearch/bin
+  OPENSEARCH_BIN: ${SNAP_CURRENT}/usr/share/opensearch/shipped-bin
   OPENSEARCH_JAVA_HOME: ${JAVA_HOME}
 
-  OPENSEARCH_HOME: ${SNAP_DATA_CURRENT}/usr/share/opensearch
+  OPENSEARCH_HOME: ${SNAP_CURRENT}/usr/share/opensearch
   OPENSEARCH_LIB: ${OPENSEARCH_HOME}/lib
-  OPENSEARCH_PLUGINS: ${OPENSEARCH_HOME}/plugins
+  OPENSEARCH_PLUGINS: ${SNAP_DATA_CURRENT}/usr/share/opensearch/plugins
+  OPENSEARCH_EXTENSIONS: ${SNAP_COMMON}/usr/share/opensearch/extensions
   OPENSEARCH_MODULES: ${OPENSEARCH_HOME}/modules
 
-  OPENSEARCH_PATH_CONF: ${SNAP_DATA_CURRENT}/etc/opensearch
-  OPENSEARCH_PATH_CERTS: ${SNAP_DATA_CURRENT}/etc/opensearch/certificates
+  OPENSEARCH_PATH_CONF: ${SNAP_COMMON}/etc/opensearch
+  OPENSEARCH_PATH_CERTS: ${SNAP_COMMON}/etc/opensearch/certificates
 
   OPENSEARCH_VARLIB: ${SNAP_COMMON}/var/lib/opensearch
-  OPENSEARCH_TMPDIR: ${SNAP_COMMON}/usr/share/tmp
+  OPENSEARCH_TMPDIR: ${SNAP_DATA_CURRENT}/tmp
   OPENSEARCH_VARLOG: ${SNAP_COMMON}/var/log/opensearch
 
   KNN_LIB_DIR: ${OPENSEARCH_PLUGINS}/opensearch-knn/lib
@@ -93,8 +94,11 @@ environment:
 apps:
   daemon:
     daemon: simple
-    install-mode: disable
+    install-mode: enable
     command: opt/opensearch/start.sh
+    # Revert skips refresh hooks. Save this revision's plugin configuration when
+    # its service stops, before another revision becomes active.
+    post-stop-command: opt/opensearch/save-plugin-configuration.sh
     restart-condition: always
     restart-delay: 20s
     plugs:
@@ -121,6 +125,8 @@ apps:
 
   setup:
     command: opt/opensearch/setup.sh
+    plugs:
+      - network
 
   test-cluster-health-green:
     command: opt/opensearch/tests/test-cluster-health-green.sh
@@ -149,12 +155,10 @@ apps:
       bin_script: opensearch
 
   plugin:
-    command: opt/opensearch/bin-wrapper.sh
+    command: opt/opensearch/plugin-wrapper.sh
     plugs:
       - network
       - network-bind
-    environment:
-      bin_script: opensearch-plugin.orig
 
   cli:
     command: opt/opensearch/bin-wrapper.sh
@@ -186,7 +190,7 @@ apps:
       - network
       - network-bind
     environment:
-      bin_script: opensearch-keystore.orig
+      bin_script: opensearch-keystore
 
   node:
     command: opt/opensearch/bin-wrapper.sh
@@ -206,32 +210,30 @@ apps:
     plugs:
       - network
       - network-bind
+      - mount-observe
     environment:
       bin_script: opensearch-shard
 
-  upgrade:
-    command: opt/opensearch/bin-wrapper.sh
+  plugins-security-securityadmin:
+    command: opt/opensearch/plugins-wrapper.sh
     plugs:
       - network
       - network-bind
     environment:
-      bin_script: opensearch-upgrade
+      plugin_tool: opensearch-security/tools/securityadmin.sh
 
-  performance-analyzer-agent:
-    command: opt/opensearch/bin-wrapper.sh
-    plugs:
-      - network
-      - network-bind
+  plugins-security-hash:
+    command: opt/opensearch/plugins-wrapper.sh
     environment:
-      bin_script: opensearch-performance-analyzer/performance-analyzer-agent
+      plugin_tool: opensearch-security/tools/hash.sh
 
-  performance-analyzer-agent-cli:
-    command: opt/opensearch/bin-wrapper.sh
+  plugins-security-audit-config-migrater:
+    command: opt/opensearch/plugins-wrapper.sh
     plugs:
       - network
       - network-bind
     environment:
-      bin_script: opensearch-performance-analyzer/performance-analyzer-agent-cli
+      plugin_tool: opensearch-security/tools/audit_config_migrater.sh
 
   keytool:
     command: opt/opensearch/keytool-wrapper.sh
@@ -314,9 +316,10 @@ parts:
 
       # Use local HTTP cache if available to avoid re-downloading the large tarball
       cache_url="${OPS_TARBALL_CACHE_URL:-}"
-      if [ -n "${cache_url}" ]; then
-        curl -skL "${cache_url}/${archive}" -o "${archive}"
+      if [ -n "${cache_url}" ] && curl -sf --max-time 5 -o "${archive}" "${cache_url}/${archive}"; then
+        echo "Using cached tarball from ${cache_url}/${archive}"
       else
+        echo "Downloading tarball from Launchpad..."
         curl -sk "${url}" \
           | jq -r '.entries[].file_link' \
           | sort \
@@ -338,6 +341,13 @@ parts:
       done
       chmod -R 755 "${CRAFT_PART_INSTALL}/usr/share/opensearch/bin"
 
+      # The snap ships its own JDK (OPENSEARCH_JAVA_HOME): silence the
+      # "no-jdk distributions ... are deprecated" warning of every bin script
+      sed -i 's/^OPENSEARCH_BUNDLED_JDK=false$/OPENSEARCH_BUNDLED_JDK=true/' \
+          "${CRAFT_PART_INSTALL}/usr/share/opensearch/bin/opensearch-env"
+      grep -q '^OPENSEARCH_BUNDLED_JDK=true$' \
+          "${CRAFT_PART_INSTALL}/usr/share/opensearch/bin/opensearch-env"
+
       export JAVA_HOME="/usr/lib/jvm/java-21-openjdk-${CRAFT_ARCH_BUILD_FOR}"
       export OPENSEARCH_PATH_CONF="${CRAFT_PART_INSTALL}/etc/opensearch"
 
@@ -353,9 +363,19 @@ parts:
       for plugin in "${plugins_to_remove[@]}"; do
           echo "Attempting to remove: ${plugin}"
           # Execute the official removal tool.
-          "${CRAFT_PART_INSTALL}/usr/share/opensearch/bin/opensearch-plugin" remove "${plugin}"
+          # --purge to remove config files and data associated with the plugin.
+          "${CRAFT_PART_INSTALL}/usr/share/opensearch/bin/opensearch-plugin" remove "${plugin}" --purge
       done
       ls "${CRAFT_PART_INSTALL}/usr/share/opensearch/plugins"
+
+      shipped="${CRAFT_PART_INSTALL}/usr/share/opensearch/shipped-plugins"
+      mv "${CRAFT_PART_INSTALL}/usr/share/opensearch/plugins" "${shipped}"
+
+      # Same for bin/: the plugin installer copies a plugin's bin/ into
+      # <home>/bin/<plugin>, so bin/ must be writable. It becomes a link to
+      # the writable data dir, filled with links to the shipped scripts.
+      mv "${CRAFT_PART_INSTALL}/usr/share/opensearch/bin" \
+          "${CRAFT_PART_INSTALL}/usr/share/opensearch/shipped-bin"
 
       # Final clean-up
       rm "${archive}"
@@ -366,13 +386,9 @@ parts:
       done
 
     override-prime: |
-      # Copy wrappers for bin commands to fix upgrades:
-      # https://github.com/canonical/opensearch-operator/issues/537
       craftctl default
 
-      mv "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-plugin" "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-plugin.orig"
-      mv "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-keystore" "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-keystore.orig"
-
-      cp "${CRAFT_STAGE}/opt/opensearch/plugin-wrapper.sh" "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-plugin"
-      cp "${CRAFT_STAGE}/opt/opensearch/keystore-wrapper.sh" "${CRAFT_PRIME}/usr/share/opensearch/bin/opensearch-keystore"
+      ln -s /var/snap/opensearch/current/usr/share/opensearch/plugins "${CRAFT_PRIME}/usr/share/opensearch/plugins"
+      ln -s /var/snap/opensearch/current/usr/share/opensearch/bin "${CRAFT_PRIME}/usr/share/opensearch/bin"
+      ln -s /var/snap/opensearch/common/usr/share/opensearch/extensions "${CRAFT_PRIME}/usr/share/opensearch/extensions"
     # yamllint enable rule:line-length
