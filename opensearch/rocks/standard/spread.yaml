@@ -28,7 +28,7 @@ suites:
         oci-archive:"${CRAFT_ARTIFACT}" \
         docker-daemon:opensearch:"${version}"
     restore-each: |
-      docker rm -f cm0 data1 cm1 2>/dev/null || true
+      docker rm -f cm0 data1 cm1 nopass rocfg 2>/dev/null || true
       version="$(yq .version "${PROJECT_PATH}/rockcraft.yaml" | tr -d '"')"
       docker rmi opensearch:"${version}" 2>/dev/null || true
 
