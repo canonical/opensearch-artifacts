@@ -19,20 +19,26 @@ platforms: # the platforms this rock should be built on and run on
 
 run_user: _daemon_
 
+environment:
+  OPENSEARCH_DASHBOARDS_HOME: /usr/share/opensearch-dashboards
+  OPENSEARCH_DASHBOARDS_BIN: /usr/share/opensearch-dashboards/bin
+  NODE_HOME: /usr/share/opensearch-dashboards/node
+  OPENSEARCH_DASHBOARDS_PATH_CONF: /usr/share/opensearch-dashboards/config
+  OSD_PATH_CONF: /usr/share/opensearch-dashboards/config
+  PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\
+    /usr/share/opensearch-dashboards/bin"
+  PEBBLE_VERBOSE: "1"
+
 services:
   opensearch-dashboards:
     override: replace
     startup: enabled
-    summary: Start Opensearch Dashboards
+    summary: Start OpenSearch Dashboards
     command: '/bin/bash /bin/start.sh'
-    environment:
-      OPENSEARCH_DASHBOARDS_HOME: /usr/share/opensearch-dashboards
-      OPENSEARCH_DASHBOARDS_BIN: /usr/share/opensearch-dashboards/bin
-      OPENSEARCH_DASHBOARDS_PATH_CONF: /etc/opensearch-dashboards
-      OPENSEARCH_DASHBOARDS_VARLOG: /var/log/opensearch-dashboards
-      OPENSEARCH_DASHBOARDS_VARLIB: /var/lib/opensearch-dashboards
-      OPENSEARCH_DASHBOARDS_TMPDIR: /var/tmp/opensearch-dashboards
-      NODE_HOME: /usr/share/opensearch-dashboards/node
+    user: _daemon_
+    group: _daemon_
+    working-dir: /usr/share/opensearch-dashboards
+    on-failure: shutdown
 
 parts:
   opensearch-dashboards-snap:
@@ -40,12 +46,24 @@ parts:
     stage-snaps:
       - opensearch-dashboards/3/edge
     stage:
-      - "-opt/opensearch-dashboards/helpers"
-      - "-opt/opensearch-dashboards/start.sh"
+      - "-opt/opensearch-dashboards"
+      - "-config"
     stage-packages:
       - util-linux
       - python3-venv
       - curl
+    override-build: |
+      craftctl default
+
+      OSD_HOME="${CRAFT_PART_INSTALL}/usr/share/opensearch-dashboards"
+
+      mv "${CRAFT_PART_INSTALL}/etc/opensearch-dashboards" "${OSD_HOME}/config"
+
+      rm -f "${OSD_HOME}/plugins"
+      mv "${OSD_HOME}/shipped-plugins" "${OSD_HOME}/plugins"
+
+      echo "server.host: '0.0.0.0'" >> \
+          "${OSD_HOME}/config/opensearch_dashboards.yml"
     override-prime: |
       craftctl default
 
@@ -70,28 +88,23 @@ parts:
     override-prime: |
       craftctl default
 
-      OSD_PATH_CONF="${CRAFT_PRIME}/etc/opensearch-dashboards"
-      OSD_PATH_CERT="${CRAFT_PRIME}/etc/opensearch-dashboards/certificates"
       OSD_HOME="${CRAFT_PRIME}/usr/share/opensearch-dashboards"
-      OSD_VARLIB="${CRAFT_PRIME}/var/lib/opensearch-dashboards"
-      OSD_VARLOG="$CRAFT_PRIME/var/log/opensearch-dashboards"
-      OSD_TMPDIR="$CRAFT_PRIME/usr/share/tmp"
 
-      mkdir -p "${OSD_VARLIB}" "${OSD_VARLOG}" "${OSD_TMPDIR}" \
-        "${OSD_PATH_CERT}"
-      chown -R 584792:584792 \
-        "${OSD_PATH_CONF}" "${OSD_HOME}" "${OSD_VARLIB}" \
-        "${OSD_VARLOG}" "${OSD_TMPDIR}" "${OSD_PATH_CERT}"
+      # --- Directory permissions ---
+      # Like upstream, the home belongs to the OpenSearch Dashboards user,
+      # which writes its data and its keystore, and installs and removes
+      # plugins, all as _daemon_.
+      mkdir -p "${OSD_HOME}/data"
+      chown -R 584792:584792 "${OSD_HOME}"
 
-      chmod -R 770 "${OSD_VARLIB}" "${OSD_VARLOG}" "${OSD_TMPDIR}"
+      chmod 770 "${OSD_HOME}/config" "${OSD_HOME}/data"
       chmod -R 755 "${OSD_HOME}/bin"
 
   entry:
     plugin: dump
+    after: [non-root-user]
     source: scripts
     organize:
       start.sh: usr/bin/start.sh
-      set-conf.sh: usr/bin/set-conf.sh
     stage:
       - usr/bin/start.sh
-      - usr/bin/set-conf.sh

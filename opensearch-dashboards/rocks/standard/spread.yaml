@@ -37,7 +37,7 @@ suites:
       docker pull "${os_img}"
       docker tag "${os_img}" opensearch:"${version}"
     restore-each: |
-      docker rm -f osd cm0 2>/dev/null || true
+      docker rm -f osd osd-plain osd-fail cm0 plain 2>/dev/null || true
       docker network rm osd-net 2>/dev/null || true
       version="$(yq -r .version "${PROJECT_PATH}/rockcraft.yaml")"
       base="$(yq -r .base "${PROJECT_PATH}/rockcraft.yaml")"
