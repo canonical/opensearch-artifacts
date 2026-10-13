@@ -62,7 +62,7 @@ parts:
       rm -f "${OSD_HOME}/plugins"
       mv "${OSD_HOME}/shipped-plugins" "${OSD_HOME}/plugins"
 
-      echo "server.host: '0.0.0.0'" >> \
+      printf "\nserver.host: '0.0.0.0'\n" >> \
           "${OSD_HOME}/config/opensearch_dashboards.yml"
     override-prime: |
       craftctl default
