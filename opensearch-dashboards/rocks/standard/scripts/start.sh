@@ -11,7 +11,14 @@ opensearch_dashboards_vars=(
     opensearch.username
     opensearch.password
     opensearch.ssl.verificationMode
+    opensearch.ssl.certificate
     opensearch.ssl.certificateAuthorities
+    opensearch.ssl.key
+    opensearch.ssl.keyPassphrase
+    opensearch.ssl.keystore.path
+    opensearch.ssl.keystore.password
+    opensearch.ssl.truststore.path
+    opensearch.ssl.truststore.password
     server.host
     server.port
     server.ssl.enabled
