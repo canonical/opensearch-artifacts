@@ -2,13 +2,14 @@
 
 set -eu
 
+source "${OPS_ROOT}"/helpers/read-option-value.sh
 
 usage() {
 cat << EOF
-usage: test-node-up.sh --node-name cm0 --admin-auth-password admin
+usage: test-node-up.sh --node-name cm0 --admin-auth-password <password>
 Tests if the passed node is up and running.
 --node-name             (Optional)  Name of the node to check the status, default "cm0"
---admin-auth-password   (Optional)  Password for basic auth with the opensearch rest api, default "admin"
+--admin-auth-password   (Required)  Password of the admin user for basic auth with the opensearch rest api
 --help                              Shows help menu
 EOF
 }
@@ -21,33 +22,27 @@ admin_auth_password=""
 
 # Args handling
 function parse_args () {
-    # init-security boolean - from the charm, this should be based on a flag on the app data bag.
-    local LONG_OPTS_LIST=(
-        "node-name"
-        "admin-auth-password"
-        "help"
-    )
-    local opts=$(getopt \
-      --longoptions "$(printf "%s:," "${LONG_OPTS_LIST[@]}")" \
-      --name "$(readlink -f "${BASH_SOURCE}")" \
-      --options "" \
-      -- "$@"
-    )
-    eval set -- "${opts}"
-
-    while [ $# -gt 0 ]; do
-        case $1 in
-            --node-name) shift
-                node_name=$1
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --node-name|--node-name=*)
+                read_option_value "$@" || return 1
+                node_name="$option_value"
+                shift "$option_arguments"
                 ;;
-            --admin-auth-password) shift
-                admin_auth_password=$1
+            --admin-auth-password|--admin-auth-password=*)
+                read_option_value "$@" || return 1
+                admin_auth_password="$option_value"
+                shift "$option_arguments"
                 ;;
-            --help) usage
-                exit
+            --help)
+                usage
+                exit 0
+                ;;
+            *)
+                echo "Unknown argument: $1" >&2
+                return 1
                 ;;
         esac
-        shift
     done
 }
 
@@ -57,7 +52,8 @@ function set_defaults () {
     fi
 
     if [ -z "${admin_auth_password}" ]; then
-        admin_auth_password="admin"
+        echo "ERROR: --admin-auth-password is required. Refer to the help menu." >&2
+        exit 1
     fi
 }
 

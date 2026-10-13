@@ -1,92 +1,145 @@
 #!/usr/bin/env bash
 
-set -eux
+# No xtrace: it would print the passwords and the secret settings
+set -eu
 
-CLUSTER_NAME="${CLUSTER_NAME:-opensearch-dev}"
-NODE_NAME="${NODE_NAME:-node-0}"
-NODE_ROLES="${NODE_ROLES:-cluster_manager,data}"
-INITIAL_CM_NODES="${INITIAL_CM_NODES:-}"
-NETWORK_HOST="${NETWORK_HOST:-_local_,_site_}"
-SEED_HOSTS="${SEED_HOSTS:-}"
+# Users of the demo configuration whose initial password can be given in
+# OPENSEARCH_INITIAL_<USER>_PASSWORD, besides admin, set by the demo
+# configuration itself
+DEMO_USERS=(anomalyadmin kibanaro kibanaserver logstash readall snapshotrestore)
+
+# Settings passed to OpenSearch as -E options, which take precedence over
+# opensearch.yml: the file is never modified, so it can be mounted read-only
+declare -A settings=()
 
 
-function set_yaml_prop() {
-    local target_file="${1}"
-    local key="${2}"
-    local value="${3}"
+# Set a setting from a comma separated list, without its spaces
+function set_list_setting() {
+    local key="${1}"
+    local value="${2}"
 
-    /usr/bin/python3 /usr/bin/set_conf.py --file "${target_file}" --key "${key}" --value "${value}"
+    settings["${key}"]="${value//[[:space:]]/}"
 }
 
-function network_host() {
-    echo "[ \"_site_\", \"$(hostname -i)\" ]"
-}
+# Password of each demo user given in OPENSEARCH_INITIAL_<USER>_PASSWORD, the
+# others keep their demo password. Like the admin password, set by the demo
+# configuration, it only counts on the first start, which creates the
+# security index from internal_users.yml.
+function set_initial_passwords() {
+    local internal_users="${OPENSEARCH_PATH_CONF}/opensearch-security/internal_users.yml"
+    local hash_tool="${OPENSEARCH_PLUGINS}/opensearch-security/tools/hash.sh"
+    local user var hash
 
-function node_roles() {
-    formatted_roles=""
-
-    IFS=',' read -r -a roles <<< "${NODE_ROLES}"
-    for role in "${roles[@]}"; do
-        if [ -n "${formatted_roles}" ]; then
-            formatted_roles="${formatted_roles}, "
+    for user in "${DEMO_USERS[@]}"; do
+        var="OPENSEARCH_INITIAL_${user^^}_PASSWORD"
+        if [ -z "${!var:-}" ]; then
+            continue
         fi
-        formatted_roles="${formatted_roles}\"$(echo -e "${role}" | tr -d '[:space:]')\""
-    done
 
-    echo "[ ${formatted_roles} ]"
-}
-
-function init_cm_nodes() {
-    formatted_nodes=""
-
-    IFS=',' read -r -a nodes <<< "${INITIAL_CM_NODES}"
-    for node in "${nodes[@]}"; do
-        if [ -n "${formatted_nodes}" ]; then
-            formatted_nodes="${formatted_nodes}, "
+        hash="$(bash "${hash_tool}" -env "${var}")"
+        if ! [[ "${hash}" =~ ^\$2[aby]\$[0-9]{2}\$[./A-Za-z0-9]{53}$ ]]; then
+            echo "ERROR: could not hash the initial password of ${user}." >&2
+            exit 1
         fi
-        formatted_nodes="${formatted_nodes}\"$(echo -e "${node}" | tr -d '[:space:]')\""
+        /usr/bin/python3 /usr/bin/init_users.py set-hash \
+            --file "${internal_users}" --user "${user}" --hash "${hash}"
     done
-
-    echo "[ ${formatted_nodes} ]"
 }
 
-function seed_hosts() {
-    formatted_hosts=""
+function setup_security_plugin() {
+    local security_plugin="${OPENSEARCH_PLUGINS}/opensearch-security"
 
-    if [[ "${NODE_ROLES}" == *"cluster_manager"* ]]; then
-        formatted_hosts="\"$(hostname -i)\""
+    if [ ! -d "${security_plugin}" ]; then
+        echo "OpenSearch Security Plugin does not exist, disable by default"
+        return
     fi
 
-    IFS=',' read -r -a hosts <<< "${SEED_HOSTS}"
-    for host in "${hosts[@]}"; do
-        if [ -n "${formatted_hosts}" ]; then
-            formatted_hosts="${formatted_hosts}, "
+    # Installing the demo configuration of a disabled plugin is pointless
+    if [ "${DISABLE_INSTALL_DEMO_CONFIG:-}" = "true" ] \
+            || [ "${DISABLE_SECURITY_PLUGIN:-}" = "true" ]; then
+        echo "Disabling execution of install_demo_configuration.sh for OpenSearch Security Plugin"
+    else
+        # The demo configuration installs into the configuration directory of
+        # OPENSEARCH_HOME, whatever the one OpenSearch reads
+        if [ "$(realpath -m "${OPENSEARCH_PATH_CONF}")" != "${OPENSEARCH_HOME}/config" ]; then
+            echo "ERROR: the demo configuration can only be installed in" \
+                "${OPENSEARCH_HOME}/config, not in OPENSEARCH_PATH_CONF." \
+                "Set DISABLE_INSTALL_DEMO_CONFIG=true and provide your own" \
+                "security configuration." >&2
+            exit 1
         fi
-        formatted_hosts="${formatted_hosts}\"$(echo -e "${host}" | tr -d '[:space:]')\""
-    done
 
-    echo "[ ${formatted_hosts} ]"
+        set_initial_passwords
+        echo "Enabling execution of install_demo_configuration.sh for OpenSearch Security Plugin"
+        /bin/bash "${security_plugin}/tools/install_demo_configuration.sh" -y -i -s
+    fi
+
+    if [ "${DISABLE_SECURITY_PLUGIN:-}" = "true" ]; then
+        echo "Disabling OpenSearch Security Plugin"
+        settings["plugins.security.disabled"]="true"
+    else
+        echo "Enabling OpenSearch Security Plugin"
+    fi
 }
 
 
-conf="${OPENSEARCH_PATH_CONF}/opensearch.yml"
+export OPENSEARCH_JAVA_OPTS="-Dopensearch.cgroups.hierarchy.override=/ ${OPENSEARCH_JAVA_OPTS:-}"
 
-set_yaml_prop "${conf}" "cluster.name" "${CLUSTER_NAME}"
-set_yaml_prop "${conf}" "node.name" "${NODE_NAME}"
-set_yaml_prop "${conf}" "node.roles" "$(node_roles)"
-
-if [[ -n "${INITIAL_CM_NODES}" ]] && [[ "${NODE_ROLES}" == *"cluster_manager"* ]]; then
-    set_yaml_prop "${conf}" "cluster.initial_cluster_manager_nodes" "$(init_cm_nodes)"
+# Variables overriding a setting of opensearch.yml, when given
+if [ -n "${CLUSTER_NAME:-}" ]; then
+    settings["cluster.name"]="${CLUSTER_NAME}"
+fi
+if [ -n "${NODE_NAME:-}" ]; then
+    settings["node.name"]="${NODE_NAME}"
+fi
+if [ -n "${NODE_ROLES:-}" ]; then
+    set_list_setting "node.roles" "${NODE_ROLES}"
+fi
+if [ -n "${NETWORK_HOST:-}" ]; then
+    set_list_setting "network.host" "${NETWORK_HOST}"
+fi
+if [ -n "${SEED_HOSTS:-}" ]; then
+    set_list_setting "discovery.seed_hosts" "${SEED_HOSTS}"
 fi
 
-set_yaml_prop "${conf}" "network.host" "$(network_host)"
-set_yaml_prop "${conf}" "discovery.seed_hosts" "$(seed_hosts)"
-set_yaml_prop "${conf}" "path.data" "${OPENSEARCH_VARLIB}/data"
-set_yaml_prop "${conf}" "path.logs" "${OPENSEARCH_VARLOG}/logs"
-set_yaml_prop "${conf}" "plugins.security.disabled" "true"
-sed -i "s@=logs/@=${OPENSEARCH_VARLOG}/@" "${OPENSEARCH_PATH_CONF}/jvm.options"
-sed -i "s@-javaagent:agent/@-javaagent:${OPENSEARCH_HOME}/agent/@" "${OPENSEARCH_PATH_CONF}/jvm.options"
+# Like upstream, a variable named after a setting, e.g. cluster.name, sets it.
+# It takes precedence over the variables above. Each variable is read whole,
+# a value can not add other settings, whatever its characters.
+while IFS= read -r -d '' entry; do
+    key="${entry%%=*}"
+    value="${entry#*=}"
+    if [[ "${key}" =~ ^[a-z0-9_]+\.[a-z0-9_]+ || "${key}" == "processors" ]] \
+            && [ -n "${value}" ]; then
+        settings["${key}"]="${value}"
+    fi
+done < <(env -0)
 
-cat "${conf}"
+# Only on nodes that may be cluster manager, which a node without node.roles
+# can be
+if [[ -n "${INITIAL_CM_NODES:-}" ]] \
+        && [[ -z "${settings[node.roles]:-}" \
+            || ",${settings[node.roles]}," == *",cluster_manager,"* ]] \
+        && [ -z "${settings[cluster.initial_cluster_manager_nodes]:-}" ]; then
+    set_list_setting "cluster.initial_cluster_manager_nodes" "${INITIAL_CM_NODES}"
+fi
 
-exec "${OPENSEARCH_BIN}"/opensearch
+setup_security_plugin
+
+opensearch_opts=()
+for key in "${!settings[@]}"; do
+    opensearch_opts+=("-E${key}=${settings[${key}]}")
+done
+# The names only, the values may be secrets
+if [ "${#settings[@]}" -gt 0 ]; then
+    echo "Settings overridden: ${!settings[*]}"
+fi
+
+# The initial passwords are only needed to set up the users
+while IFS= read -r -d '' entry; do
+    key="${entry%%=*}"
+    if [[ "${key}" =~ ^OPENSEARCH_INITIAL_[A-Z0-9_]+_PASSWORD$ ]]; then
+        unset "${key}"
+    fi
+done < <(env -0)
+
+exec "${OPENSEARCH_BIN}"/opensearch "${opensearch_opts[@]}"

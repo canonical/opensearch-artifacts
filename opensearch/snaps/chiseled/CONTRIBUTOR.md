@@ -8,7 +8,7 @@ Steps to install it locally:
 snapcraft --debug
 
 # install the snap
-sudo snap install opensearch-chiseled_3.7.0_amd64.snap --dangerous --jailmode
+sudo snap install opensearch-chiseled_3.8.0_amd64.snap --dangerous --jailmode
 ```
 
 ### Environment configuration:
@@ -36,7 +36,7 @@ Now, configuring the required system settings along with connecting the interfac
 ### Set-up an OpenSearch cluster:
 ```
 # create the certificates
-sudo snap run opensearch-chiseled.setup       \
+sudo snap run opensearch-chiseled.setup            \
     --node-name cm0                       \
     --node-roles cluster_manager,data     \
     --tls-priv-key-root-pass root1234     \
@@ -56,18 +56,21 @@ sudo snap run opensearch-chiseled.security-init --tls-priv-key-admin-pass=admin1
 The OpenSearch setup can be tested either in either of the following ways:
 1. Provided [helper script](test-dev-cluster.sh):
     ```
-    bash test-dev-cluster.sh
+    # The admin password generated on install (root only):
+    ADMIN_PASSWORD=$(sudo sed -n 's/^admin: "\(.*\)"$/\1/p' /var/snap/opensearch-chiseled/common/init_users_pass.yaml)
+
+    bash test-dev-cluster.sh --admin-auth-password "$ADMIN_PASSWORD"
     ```
 2. Manually:
     ```
    # Check if cluster is healthy (green):
-   sudo snap run opensearch-chiseled.test-cluster-health-green
+   sudo snap run opensearch-chiseled.test-cluster-health-green --admin-auth-password "$ADMIN_PASSWORD"
    
    # Check if node is up:
-   sudo snap run opensearch-chiseled.test-node-up
+   sudo snap run opensearch-chiseled.test-node-up --node-name "opensearch-$(hostname)" --admin-auth-password "$ADMIN_PASSWORD"
    
    # Check if the security index is well initialised:
-   sudo snap run opensearch-chiseled.test-security-index-created
+   sudo snap run opensearch-chiseled.test-security-index-created --admin-auth-password "$ADMIN_PASSWORD"
    ```
 
 ### For live debugging:
