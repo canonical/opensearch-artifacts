@@ -24,46 +24,142 @@ sudo snap install opensearch-dashboards --channel=3/edge
 
 ### Starting OpenSearch Dashboards:
 
+The daemon starts as soon as the snap is installed, connecting to an
+OpenSearch instance on `https://localhost:9200` with the default credentials
+(user: `kibanaserver`, password: `kibanaserver`). Until the OpenSearch CA is
+configured, the OpenSearch certificates are not verified
+(`opensearch.ssl.verificationMode: none`, as in the upstream configuration
+file).
+
+**The OpenSearch snap generates a random `kibanaserver` password and its own CA
+on install, so configuring them is a required first step.** Until then,
+OpenSearch rejects the default credentials: `http://localhost:5601` answers
+`OpenSearch Dashboards server is not ready yet` and the log at the end of this
+document shows `[ResponseError]: Response Error`. Snap confinement keeps
+Dashboards from reading these files itself; run, as root, the
+[example below](#configuration) with the OpenSearch snap on the same machine,
+or pass the credentials and CA of your cluster.
+
+The service can be managed with:
+```
+sudo snap stop|start|restart opensearch-dashboards.opensearch-dashboards-daemon
+```
+
 #### Configuration:
 
-All settings are read from the OpenSearch Dashboards configuration file, which
-the install hook seeds into writable snap data:
+The configuration lives in the snap's common data, so it is kept across
+refreshes:
 
 ```
-/var/snap/opensearch-dashboards/current/etc/opensearch-dashboards/opensearch_dashboards.yml
+/var/snap/opensearch-dashboards/common/etc/opensearch-dashboards/opensearch_dashboards.yml
 ```
 
-Edit that file before starting the service. The commonly changed keys are:
+It is changed with the `setup` application, which writes the settings to that
+file. Settings are passed as with the upstream `bin/opensearch-dashboards`:
+`--<setting>=<value>`, where `<setting>` is any key
+of `opensearch_dashboards.yml`, e.g. `--server.host=0.0.0.0`. Unlike the upstream
+command line, the settings are kept in the configuration file. The daemon must
+be restarted for the new settings to be applied:
 
- - `server.host` -- hostname or IP where the service is exposed (default: `localhost`)
- - `server.port` -- port where the service is exposed (default: `5601`)
- - `opensearch.hosts` -- OpenSearch instance URI to connect to (default: `https://localhost:9200`)
- - `opensearch.username` / `opensearch.password` -- credentials used to
-   authenticate against OpenSearch (default: `kibanaserver` / `kibanaserver`)
-
-This snap exposes no snap options, so `snap set` has no effect on it: the
-configuration file above is the only place to change settings.
-
-#### Starting up the service:
-
-The daemon is not started at install time. Once the configuration is in place
-(or if the defaults are acceptable), `opensearch-dashboards` can be started by
-executing the following command
 ```
-sudo snap start opensearch-dashboards.opensearch-dashboards-daemon
+sudo snap restart opensearch-dashboards.opensearch-dashboards-daemon
 ```
+
+The value is written as is, as a string, which OpenSearch Dashboards converts to
+the type of the setting (e.g. `--server.port=5602`). A value in brackets is a
+YAML list, and an empty value removes the setting (e.g. `--server.name=`).
+OpenSearch Dashboards refuses to start with an unknown setting
+(`Unknown configuration key(s)`): check `snap logs opensearch-dashboards` after a
+change.
+
+Two arguments are handled by the snap:
+
+ - `--opensearch.hosts=<host> [<host> ...]` -- the OpenSearch hosts. Further
+   arguments, comma separated values and the items of a YAML list are added
+   to the list; the scheme defaults to `https://` and the port to `9200`.
+ - `--opensearch-ca=<PEM>` -- not a setting: the CA that signed the OpenSearch
+   HTTP certificates, or several CAs. It is stored in
+   `.../common/etc/opensearch-dashboards/certificates/opensearch-ca.pem`, and
+   Dashboards then verifies the OpenSearch certificates against it and
+   checks that they are valid for the hosts used
+   (`opensearch.ssl.verificationMode: full`, unless set otherwise). The
+   certificates of the OpenSearch snap cover `localhost`, the hostname and the
+   IP addresses of each node; for certificates that do not, use
+   `--opensearch.ssl.verificationMode=certificate` to only check the CA.
+   Node.js does not match an IPv6 address, e.g. `[::1]`, with the addresses of
+   a certificate: use a host name for those hosts, or the `certificate` mode.
+
+For example, with the OpenSearch snap installed on the same machine, which
+generates the password of `kibanaserver` and its CA on install:
+```
+sudo opensearch-dashboards.setup \
+    --opensearch.hosts="localhost" \
+    --opensearch.password="$(sudo sed -n 's/^kibanaserver: "\(.*\)"$/\1/p' /var/snap/opensearch/common/init_users_pass.yaml)" \
+    --opensearch-ca="$(sudo cat /var/snap/opensearch/common/etc/opensearch/certificates/root-ca.pem)"
+```
+
+or against a remote cluster:
+```
+sudo opensearch-dashboards.setup \
+    --opensearch.hosts="10.0.0.1" "10.0.0.2" "10.0.0.3:9201" \
+    --opensearch-ca="$(cat /path/to/root-ca.pem)" \
+    --opensearch.username=kibanaserver --opensearch.password=kibanaserver \
+    --server.host=0.0.0.0
+```
+
+Run `opensearch-dashboards.setup --help` for the full usage.
+
+#### Keystore:
+
+Secret settings, such as the password of OpenSearch, can be kept out of
+`opensearch_dashboards.yml` in the keystore of OpenSearch Dashboards, managed
+with the upstream `opensearch-dashboards-keystore` tool through the `keystore`
+application. The keystore is
+`/var/snap/opensearch-dashboards/common/etc/opensearch-dashboards/opensearch_dashboards.keystore`:
+
+```
+sudo opensearch-dashboards.keystore create
+echo "<password>" | sudo opensearch-dashboards.keystore add --stdin opensearch.password
+sudo opensearch-dashboards.keystore list
+sudo snap restart opensearch-dashboards.opensearch-dashboards-daemon
+```
+
+#### Plugins:
+
+Plugins are managed with the upstream `opensearch-dashboards-plugin` tool through
+the `plugin` application. A plugin should be built for the same version of
+OpenSearch Dashboards: as upstream, one built for another version is installed
+and loaded, with a warning. Install it from a URL, or from a file in the
+snap's common directory, then restart the daemon to load it:
+
+```
+sudo opensearch-dashboards.plugin list
+sudo opensearch-dashboards.plugin install https://<url>/<plugin>-<version>.zip
+sudo cp <plugin>.zip /var/snap/opensearch-dashboards/common/
+sudo opensearch-dashboards.plugin install file:///var/snap/opensearch-dashboards/common/<plugin>.zip
+sudo opensearch-dashboards.plugin remove <plugin>
+sudo snap restart opensearch-dashboards.opensearch-dashboards-daemon
+```
+
+The plugins bundled with the snap must remain installed: their removal is
+rejected, without changing anything.
+
+The plugins are stored with each snap revision. A refresh removes, from the new
+revision only, the custom plugins it cannot load: those without a valid
+`opensearch_dashboards.json`, those with the id of a bundled plugin, and those
+named like a bundled plugin, which remains; as well as the links that are not to
+a plugin bundled with the snap. The daemon lists them as warnings in
+`snap logs opensearch-dashboards` each time it starts. A revert gets back the
+previous revision's plugins.
 
 ### Testing the OpenSearch Dashboards setup:
 
-OpenSearch Dashboards is by default started up at http://localhost:5601, with default
-credentials (user: `kibanaserver`, password: `kibanaserver`).
+OpenSearch Dashboards is by default served on http://localhost:5601 (set
+`--server.host=0.0.0.0` to expose it on all interfaces).
 
-If you have an OpenSearch instance running with default settings (https://localhost:9200),
-the Dashboard should be able to automatically connect.
-
-Any other potential connection (or other configuration information) should go into the
-`opensearch_dashboards.yml` file described in
-[Configuration](#configuration) above.
+```
+curl -u kibanaserver:kibanaserver http://localhost:5601/api/status
+```
 
 Logs are written to:
 

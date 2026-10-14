@@ -1,86 +1,42 @@
 #!/usr/bin/env bash
 
+# Same helpers as the OpenSearch snap (opensearch/snaps/standard/scripts/helpers/set-conf.sh).
 
-function replace_in_file() {
-    "${SNAP}"/usr/bin/setpriv \
-        --reuid snap_daemon -- sed -i "s@${2}@${3}@" "${1}"
+
+# A setting can be spelled dotted ("opensearch.hosts"), nested or mixed: replace every
+# spelling by a single dotted key. Upstream assigns a nested key ("opensearch:") over the
+# dotted keys read before it, so a parent emptied here is removed too.
+function edit_yaml_setting() {
+    local target_file="${1}" key="${2}" operation="${3}"
+    shift 3
+    "${SNAP}"/usr/bin/yq -y -i --arg k "${key}" "$@" '
+        [paths | select(all(.[]; type == "string") and join(".") == $k)] as $paths
+        | delpaths($paths)
+        | reduce ($paths[] | range(length - 1; 0; -1) as $n | .[:$n]) as $parent
+            (.; if getpath($parent) == {} then delpaths([$parent]) else . end)
+        | '"${operation}" "${target_file}"
+}
+
+
+# Read the last spelling of a setting, whether its keys are dotted, nested, or mixed.
+function get_yaml_prop() {
+    "${SNAP}"/usr/bin/yq -r --arg k "${2}" '
+        [paths | select(all(.[]; type == "string") and join(".") == $k)] as $paths
+        | if $paths | length > 0 then getpath($paths[-1]) else empty end
+    ' "${1}"
+}
+
+
+# Sets a setting to a string, e.g. set_yaml_prop f server.host 0.0.0.0
+function set_yaml_prop() {
+    edit_yaml_setting "${1}" "${2}" '.[$k] = $v' --arg v "${3}"
+}
+
+# Sets a setting to a JSON value, e.g. set_yaml_prop_json f opensearch.hosts '["https://a:9200"]'
+function set_yaml_prop_json() {
+    edit_yaml_setting "${1}" "${2}" '.[$k] = $v' --argjson v "${3}"
 }
 
 function remove_yaml_prop() {
-    local target_file="${1}"
-    local key_path="${2}"
-
-    if [[ ${key_path} != ^.* ]]; then
-        key_path=".${key_path}"
-    fi
-
-    yq -y -i "del(${key_path})" "${target_file}"
+    edit_yaml_setting "${1}" "${2}" '.'
 }
-
-
-function set_yaml_prop() {
-    local target_file="${1}"
-    local full_key_path="${2}"
-    local value="${3}"
-    local append="${4:-"no"}"
-    local split_array_content="${5:-"yes"}"
-
-    operator="="
-
-    # allow appending
-    if [ "${append}" == "yes" ]; then
-        operator="+="
-    fi
-
-    # traversal must be done through the "/" separator to allow for "." in key names
-    IFS='/' read -r -a keys <<< "${full_key_path}"
-
-    expression=""
-    for key in "${keys[@]}"
-    do
-        prefix=""
-        suffix=""
-        if [[ "${key}" != [* ]]; then
-            prefix=".\""
-            suffix="\""
-        fi
-        expression="${expression}${prefix}${key}${suffix}"
-    done
-
-    # yq fails serializing values starting with or containing special characters so they must be wrapped in double quotes
-    # so, wrap any non number
-    if [[ "${value}" == [* ]]; then
-        value=${value:1:-1}
-
-        if [ "${split_array_content}" == "yes" ]; then
-            IFS=',' read -r -a arr_elts <<< "${value}"
-
-            value=""
-            for key in "${arr_elts[@]}"
-            do
-                key=$(echo -e "${key}" | tr -d '[:space:]')
-                if ! [[ ${key} =~ ^[0-9]+$ ]] && ! [[ ${key} =~ ^\".*\"$ ]]; then
-                    key="\"${key}\""
-                fi
-                value="${value}${key},"
-            done
-            value="[${value:0:-1}]"
-        else
-            value="[${value}]"
-        fi
-    elif ! [[ "${value}" =~ ^[0-9]+$ ]]  && ! [[ ${value} =~ ^\".*\"$ ]]; then
-       value="\"${value}\""
-    fi
-
-    yq -y -i "${expression} ${operator} ${value}" "${target_file}"
-}
-
-
-#function set_python_prop () {
-#    python3 \
-#        "${OPS_ROOT}"/helpers/conf-setter.py \
-#        --file "${1}" \
-#        --key "${2}" \
-#        --value "${3}" \
-#        --output "persist"
-#}
