@@ -39,7 +39,7 @@ Configures OpenSearch Dashboards. Settings are written to:
   -h, --help    Shows this help menu
 
 The daemon must be restarted for the new settings to be applied:
-  sudo snap restart opensearch-dashboards.opensearch-dashboards-daemon
+  sudo snap restart opensearch-dashboards.daemon
 EOF
 }
 
@@ -76,8 +76,9 @@ function normalize_host () {
     host="${host%/}"
     authority="${host%%/*}"
 
-    # bare IPv6 address
-    if [[ "${authority}" == *:*:* ]] && [[ "${authority}" != \[* ]]; then
+    # bare IPv6 address, not credentials, e.g. https://user:password@host
+    if [[ "${authority}" == *:*:* ]] && [[ "${authority}" != \[* ]] \
+            && [[ "${authority}" != *@* ]]; then
         host="[${authority}]${host#"${authority}"}"
         authority="[${authority}]"
     fi
@@ -319,4 +320,4 @@ write_config
 warn_ipv6_hosts
 
 echo "Updated ${OSD_CONF_FILE}"
-echo "Restart the daemon to apply: sudo snap restart opensearch-dashboards.opensearch-dashboards-daemon"
+echo "Restart the daemon to apply: sudo snap restart opensearch-dashboards.daemon"

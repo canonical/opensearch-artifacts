@@ -64,7 +64,7 @@ environment:
 
 
 apps:
-  opensearch-dashboards-daemon:
+  daemon:
     daemon: simple
     command: opt/opensearch-dashboards/start.sh
     restart-condition: always

@@ -42,7 +42,7 @@ or pass the credentials and CA of your cluster.
 
 The service can be managed with:
 ```
-sudo snap stop|start|restart opensearch-dashboards.opensearch-dashboards-daemon
+sudo snap stop|start|restart opensearch-dashboards.daemon
 ```
 
 #### Configuration:
@@ -62,7 +62,7 @@ command line, the settings are kept in the configuration file. The daemon must
 be restarted for the new settings to be applied:
 
 ```
-sudo snap restart opensearch-dashboards.opensearch-dashboards-daemon
+sudo snap restart opensearch-dashboards.daemon
 ```
 
 The value is written as is, as a string, which OpenSearch Dashboards converts to
@@ -121,7 +121,7 @@ application. The keystore is
 sudo opensearch-dashboards.keystore create
 echo "<password>" | sudo opensearch-dashboards.keystore add --stdin opensearch.password
 sudo opensearch-dashboards.keystore list
-sudo snap restart opensearch-dashboards.opensearch-dashboards-daemon
+sudo snap restart opensearch-dashboards.daemon
 ```
 
 #### Plugins:
@@ -138,7 +138,7 @@ sudo opensearch-dashboards.plugin install https://<url>/<plugin>-<version>.zip
 sudo cp <plugin>.zip /var/snap/opensearch-dashboards/common/
 sudo opensearch-dashboards.plugin install file:///var/snap/opensearch-dashboards/common/<plugin>.zip
 sudo opensearch-dashboards.plugin remove <plugin>
-sudo snap restart opensearch-dashboards.opensearch-dashboards-daemon
+sudo snap restart opensearch-dashboards.daemon
 ```
 
 The plugins bundled with the snap must remain installed: their removal is
