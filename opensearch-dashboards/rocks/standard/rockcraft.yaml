@@ -38,13 +38,15 @@ services:
     user: _daemon_
     group: _daemon_
     working-dir: /usr/share/opensearch-dashboards
+    on-success: shutdown
     on-failure: shutdown
+    kill-delay: 30s
 
 parts:
   opensearch-dashboards-snap:
     plugin: nil
     stage-snaps:
-      - opensearch-dashboards/3/edge/pr-46
+      - opensearch-dashboards/3/edge
     stage:
       - "-opt/opensearch-dashboards"
       - "-config"

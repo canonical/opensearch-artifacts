@@ -18,7 +18,7 @@ execute: |
       local name="$1" url="$2" reported
       shift 2
       for _ in $(seq 1 60); do
-          reported="$(curl -sk --max-time 3 "${url}" "$@" \
+          reported="$(curl -s --max-time 3 "${url}" "$@" \
               | jq -r '.name // empty' 2>/dev/null || true)"
           if [ "${reported}" = "${name}" ]; then
               echo "OpenSearch ${name} answered on ${url}"
@@ -58,24 +58,41 @@ execute: |
   docker network create osd-net
 
   # --- OpenSearch backend with the demo security configuration -------------
+  # The demo node certificate is for node-0.example.com, localhost and
+  # 127.0.0.1: the node is also reachable as node-0.example.com.
   docker run \
       -d -it \
       --network osd-net \
+      --network-alias node-0.example.com \
       -e OPENSEARCH_INITIAL_ADMIN_PASSWORD="${admin_password}" \
       -e NODE_NAME=cm0 \
       -e INITIAL_CM_NODES=cm0 \
       -p 9200:9200 \
       --name cm0 \
       opensearch:"${version}"
-  wait_for_opensearch cm0 https://127.0.0.1:9200 "${auth[@]}"
+
+  # The CA of the demo certificates, written on the first start
+  for _ in $(seq 1 60); do
+      docker exec cm0 test -s /usr/share/opensearch/config/root-ca.pem \
+          && break
+      sleep 3
+  done
+  docker cp cm0:/usr/share/opensearch/config/root-ca.pem root-ca.pem
+  chmod 644 root-ca.pem
+  wait_for_opensearch cm0 https://127.0.0.1:9200 \
+      --cacert root-ca.pem "${auth[@]}"
 
   # --- Dashboards with its default configuration ---------------------------
-  # The variable becomes an option of OpenSearch Dashboards: only the host
-  # differs from the defaults.
+  # The variables become options of OpenSearch Dashboards: the host, and the
+  # CA to verify the certificate of OpenSearch with.
+  osd_ca="${conf_dir}/opensearch-root-ca.pem"
   docker run \
       -d -it \
       --network osd-net \
-      -e OPENSEARCH_HOSTS='["https://cm0:9200"]' \
+      -v "${PWD}/root-ca.pem:${osd_ca}:ro" \
+      -e OPENSEARCH_HOSTS='["https://node-0.example.com:9200"]' \
+      -e OPENSEARCH_SSL_CERTIFICATEAUTHORITIES="${osd_ca}" \
+      -e OPENSEARCH_SSL_VERIFICATIONMODE=full \
       -p 5601:5601 \
       --name osd \
       opensearch-dashboards:"${version}"
