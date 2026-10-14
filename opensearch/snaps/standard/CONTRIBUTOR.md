@@ -56,18 +56,21 @@ sudo snap run opensearch.security-init --tls-priv-key-admin-pass=admin1234
 The OpenSearch setup can be tested either in either of the following ways:
 1. Provided [helper script](test-dev-cluster.sh):
     ```
-    bash test-dev-cluster.sh
+    # The admin password generated on install (root only):
+    ADMIN_PASSWORD=$(sudo sed -n 's/^admin: "\(.*\)"$/\1/p' /var/snap/opensearch/common/init_users_pass.yaml)
+
+    bash test-dev-cluster.sh --admin-auth-password "$ADMIN_PASSWORD"
     ```
 2. Manually:
     ```
    # Check if cluster is healthy (green):
-   sudo snap run opensearch.test-cluster-health-green
+   sudo snap run opensearch.test-cluster-health-green --admin-auth-password "$ADMIN_PASSWORD"
    
    # Check if node is up:
-   sudo snap run opensearch.test-node-up
+   sudo snap run opensearch.test-node-up --node-name "opensearch-$(hostname)" --admin-auth-password "$ADMIN_PASSWORD"
    
    # Check if the security index is well initialised:
-   sudo snap run opensearch.test-security-index-created
+   sudo snap run opensearch.test-security-index-created --admin-auth-password "$ADMIN_PASSWORD"
    ```
 
 ### For live debugging:
