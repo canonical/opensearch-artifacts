@@ -44,7 +44,7 @@ parts:
   opensearch-dashboards-snap:
     plugin: nil
     stage-snaps:
-      - opensearch-dashboards/3/edge
+      - opensearch-dashboards/3/edge/pr-46
     stage:
       - "-opt/opensearch-dashboards"
       - "-config"
