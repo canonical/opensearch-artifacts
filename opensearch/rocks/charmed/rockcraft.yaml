@@ -157,6 +157,13 @@ parts:
 
       TRUSTSTORE="${CONTAINER_CONF_DIR}/certificates/cacerts.p12"
 
+      # Upstream dumps the heap to "data", relative to OPENSEARCH_HOME (the
+      # bin scripts' cwd), i.e. the image layer: use the logs volume instead.
+      HEAP_DUMP="/var/log/opensearch/java_heapdump.hprof"
+      sed -i "s@^-XX:HeapDumpPath=data\$@-XX:HeapDumpPath=${HEAP_DUMP}@" \
+          "${JVM_OPTS}"
+      grep -q "^-XX:HeapDumpPath=${HEAP_DUMP}\$" "${JVM_OPTS}"
+
       echo "-Djavax.net.ssl.trustStore=${TRUSTSTORE}" >> "${JVM_OPTS}"
       echo "-Djavax.net.ssl.trustStorePassword=changeit" >> "${JVM_OPTS}"
       echo "-Djava.library.path=${JAVA_LIBRARY_PATH}" >> "${JVM_OPTS}"

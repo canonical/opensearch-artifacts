@@ -3,6 +3,7 @@
 set -eux
 
 source "${OPS_ROOT}"/helpers/snap-logger.sh "hook-post-refresh"
+source "${OPS_ROOT}"/helpers/set-conf.sh
 
 replace_stale_jars() {
     declare -a common=(modules plugins lib)
@@ -18,3 +19,10 @@ replace_stale_jars() {
 }
 
 replace_stale_jars
+
+# Restore the new snap's bundled CAs while retaining separately named custom CAs,
+# e.g. the CA of the S3 snapshots repository.
+bash "${OPS_ROOT}/helpers/refresh-trust-store.sh" refresh
+
+# Migrate the upstream heap-dump default; preserve any path set since.
+replace_in_file "${OPENSEARCH_PATH_CONF}/jvm.options" '^-XX:HeapDumpPath=data$' "-XX:HeapDumpPath=${OPENSEARCH_VARLOG}/java_heapdump.hprof"
