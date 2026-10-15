@@ -79,6 +79,7 @@ execute: |
       --network osd-net \
       -e NODE_NAME=cm0 \
       -e INITIAL_CM_NODES=cm0 \
+      -e DISABLE_SECURITY_PLUGIN=true \
       -p 9200:9200 \
       --name cm0 \
       opensearch:"${version}"

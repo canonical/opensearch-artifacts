@@ -70,6 +70,8 @@ environment:
   OPENSEARCH_DASHBOARDS_RW_HOME: ${SNAP_DATA_CURRENT}/usr/share/opensearch-dashboards
   OPENSEARCH_DASHBOARDS_PATH_CONF: ${SNAP_DATA_CURRENT}/etc/opensearch-dashboards
   # yamllint enable rule:line-length
+  # Upstream's launcher reads node.options only from OSD_PATH_CONF
+  OSD_PATH_CONF: ${OPENSEARCH_DASHBOARDS_PATH_CONF}
 
   OPENSEARCH_DASHBOARDS_VARLOG: ${SNAP_COMMON}/var/log/opensearch-dashboards
   OPENSEARCH_DASHBOARDS_VARLIB: ${SNAP_COMMON}/var/lib/opensearch-dashboards
@@ -80,7 +82,7 @@ environment:
 
 
 apps:
-  opensearch-dashboards-daemon:
+  daemon:
     daemon: simple
     install-mode: disable
     command: opt/opensearch-dashboards/start.sh
@@ -93,7 +95,7 @@ apps:
   exporter-daemon:
     daemon: simple
     after:
-      - opensearch-dashboards-daemon
+      - daemon
     install-mode: disable
     command: opt/opensearch-dashboards/start-exporter.sh
     restart-condition: always
