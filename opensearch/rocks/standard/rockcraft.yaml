@@ -56,7 +56,9 @@ services:
     user: _daemon_
     group: _daemon_
     working-dir: /usr/share/opensearch
+    on-success: shutdown
     on-failure: shutdown
+    kill-delay: 30s
 
 parts:
   opensearch-snap:
