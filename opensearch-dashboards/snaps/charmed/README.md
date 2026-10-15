@@ -55,7 +55,7 @@ sudo snap set opensearch-dashboards-charmed scheme=https
 Once the configuration is in place (or if the defaults are acceptable),
 `opensearch-dashboards-charmed` can be started by executing the following command
 ```
-sudo snap start opensearch-dashboards-charmed.opensearch-dashboards-daemon
+sudo snap start opensearch-dashboards-charmed.daemon
 ```
 
 ### Testing the OpenSearch Dashboards setup:

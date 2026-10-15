@@ -29,9 +29,10 @@ services:
       OPENSEARCH_DASHBOARDS_HOME: /usr/share/opensearch-dashboards
       OPENSEARCH_DASHBOARDS_BIN: /usr/share/opensearch-dashboards/bin
       OPENSEARCH_DASHBOARDS_PATH_CONF: /etc/opensearch-dashboards
+      OSD_PATH_CONF: /etc/opensearch-dashboards
       OPENSEARCH_DASHBOARDS_VARLOG: /var/log/opensearch-dashboards
       OPENSEARCH_DASHBOARDS_VARLIB: /var/lib/opensearch-dashboards
-      OPENSEARCH_DASHBOARDS_TMPDIR: /var/tmp/opensearch-dashboards
+      OPENSEARCH_DASHBOARDS_TMPDIR: /usr/share/tmp
       NODE_HOME: /usr/share/opensearch-dashboards/node
 
   prometheus-exporter:
@@ -41,7 +42,7 @@ services:
     command: '/bin/bash /bin/start-exporter.sh'
     environment:
       OPENSEARCH_DASHBOARDS_PATH_CONF: /etc/opensearch-dashboards
-      PYTHONPATH: "/usr/lib/python3/dist-packages:$PYTHONPATH"
+      PYTHONPATH: /usr/lib/python3/dist-packages
 
 parts:
   opensearch-dashboards-snap:
