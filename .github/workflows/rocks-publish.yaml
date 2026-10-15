@@ -17,7 +17,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rock: ${{ fromJSON(needs.discover-rocks.outputs.rocks) }}
+        rock:
+          - name: opensearch
+            path: opensearch/rocks/standard
     uses: canonical/data-platform-workflows/.github/workflows/build_rock.yaml@v49.0.2
     with:
       path-to-rock-directory: ${{ matrix.rock.path }}
@@ -35,7 +37,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rock: ${{ fromJSON(needs.discover-rocks.outputs.rocks) }}
+        rock:
+          - name: opensearch
+            path: opensearch/rocks/standard
         runner:
           - ubuntu-26.04       # amd64
           - ubuntu-26.04-arm   # arm64
@@ -60,7 +64,7 @@ jobs:
       - test
     uses: ./.github/workflows/rocks-scan.yaml
     with:
-      rocks: ${{ needs.discover-rocks.outputs.rocks }}
+      rocks: '[{"name": "opensearch", "path": "opensearch/rocks/standard"}]'
       artifact-prefix: packed-rock
     secrets: inherit
     permissions:
@@ -78,7 +82,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rock: ${{ fromJSON(needs.discover-rocks.outputs.rocks) }}
+        rock:
+          - name: opensearch
+            path: opensearch/rocks/standard
     uses: canonical/data-platform-workflows/.github/workflows/release_rock_edge.yaml@v49.0.2
     with:
       path-to-rock-directory: ${{ matrix.rock.path }}
