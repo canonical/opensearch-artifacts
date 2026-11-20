@@ -1,0 +1,40 @@
+project: opensearch-dashboards-snap
+
+backends:
+  craft:
+    type: craft
+    systems:
+      - ubuntu-24.04
+
+suites:
+  spread/tests/:
+    summary: General integration tests
+    prepare-each: |
+      apt update
+      apt install -y curl jq python3 yq
+
+      # Required kernel parameters for the OpenSearch backend.
+      sysctl -w vm.swappiness=0
+      sysctl -w vm.max_map_count=262144
+      sysctl -w net.ipv4.tcp_retries2=5
+
+      # Install the Dashboards snap under test.
+      snap install "$CRAFT_ARTIFACT" --dangerous
+
+      snap install opensearch --channel=2/edge
+
+      # Connect the interfaces the opensearch snap needs.
+      snap connect opensearch:log-observe
+      snap connect opensearch:mount-observe
+      snap connect opensearch:process-control
+      snap connect opensearch:system-observe
+      snap connect opensearch:sys-fs-cgroup-service
+      snap connect opensearch:shmem-perf-analyzer || true
+    restore-each: |
+      snap remove opensearch-dashboards --purge
+      snap remove opensearch --purge
+
+exclude:
+  - .git
+
+kill-timeout: 1h

@@ -3,13 +3,16 @@
 name: Artifact lint
 
 concurrency:
-  group: artifact-lint-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 on:
   pull_request:
   workflow_call:
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   yaml-lint:
