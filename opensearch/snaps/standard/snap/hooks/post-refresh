@@ -23,20 +23,13 @@ replace_stale_jars() {
     done
 }
 
-# Install the plugins bundled with this revision, remove those it no longer
-# bundles, and keep the custom plugins this revision's OpenSearch can load.
+# Install the plugins bundled with this revision and keep the custom plugins
+# this revision's OpenSearch can load.
 refresh_plugins() {
     local bundled_dir="${SNAP}/usr/share/opensearch/plugins"
     local plugins_dir="${OPENSEARCH_HOME}/plugins"
-    local bundled_list="${OPENSEARCH_HOME}/.bundled-plugins"
     local removal_list plugin_path name
-    local -a previously_bundled=() custom_plugin_paths=()
-
-    # Written by the install or post-refresh hook of the previous revision.
-    # Older revisions wrote none: they bundled the same plugins as this one.
-    if [ -f "${bundled_list}" ]; then
-        mapfile -t previously_bundled < "${bundled_list}"
-    fi
+    local -a custom_plugin_paths=()
 
     removal_list="$(mktemp "${SNAP_DATA}/plugin-removal.XXXXXXXX")"
     for plugin_path in "${plugins_dir}"/*; do
@@ -46,11 +39,7 @@ refresh_plugins() {
         # This revision's copy replaces it below, as for a custom copy of it.
         [ -d "${bundled_dir}/${name}" ] && continue
 
-        if printf '%s\n' "${previously_bundled[@]}" | grep -qxF -- "${name}"; then
-            printf '%s\0' "${plugin_path}" >> "${removal_list}"
-        else
-            custom_plugin_paths+=("${plugin_path}")
-        fi
+        custom_plugin_paths+=("${plugin_path}")
     done
 
     # Check custom plugins with this revision's OpenSearch classes: a plugin
@@ -85,9 +74,6 @@ refresh_plugins() {
         as_snap_daemon "${SNAP}/usr/bin/rsync" -a --delete \
             "${plugin_path}" "${plugins_dir}/${name}/"
     done
-
-    find "${bundled_dir}" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | LC_ALL=C sort \
-        | as_snap_daemon tee "${bundled_list}" > /dev/null
 }
 
 replace_stale_jars

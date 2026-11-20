@@ -158,6 +158,9 @@ apps:
       - network-bind
     environment:
       bin_script: opensearch-plugin.orig
+      # The installer gives a plugin's config files the group of the config
+      # dir (root): it must run with that group, or plugins with config fail.
+      bin_group: root
 
   cli:
     command: opt/opensearch/bin-wrapper.sh

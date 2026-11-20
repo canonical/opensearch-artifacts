@@ -32,10 +32,6 @@ function create_file_structure () {
         cp -r "${SNAP}/usr/share/opensearch/${dir}/"* "${SNAP_DATA}/usr/share/opensearch/${dir}/"
     done
 
-    # Lets the post-refresh hook tell bundled plugins from custom ones
-    find "${SNAP}/usr/share/opensearch/plugins" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' \
-        | LC_ALL=C sort > "${OPENSEARCH_HOME}/.bundled-plugins"
-
     add_folder "${OPENSEARCH_HOME}/extensions" 770
     add_file "${OPENSEARCH_HOME}/extensions/extensions.yml" 660
     add_file "${OPENSEARCH_PATH_CONF}/unicast_hosts.txt" 660
