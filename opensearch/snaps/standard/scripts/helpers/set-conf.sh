@@ -86,7 +86,11 @@ function edit_yaml_setting() {
 
 # Sets a setting to a string, e.g. set_yaml_setting f cluster.name "a,b"
 function set_yaml_setting() {
-    edit_yaml_setting "${1}" "${2}" '.[$k] = $v' --arg v "${3}"
+    # core24's yq argument parser mistakes a string starting with -- for an
+    # option, even after --arg. JSON quoting keeps it a literal string.
+    local value
+    value="$("${SNAP}"/usr/bin/jq -cn --arg v "${3}" '$v')" || return 1
+    edit_yaml_setting "${1}" "${2}" '.[$k] = $v' --argjson v "${value}"
 }
 
 # Sets a setting to a JSON value, e.g. set_yaml_setting_json f node.roles '[]'
