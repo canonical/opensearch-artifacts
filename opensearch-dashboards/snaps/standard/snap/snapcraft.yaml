@@ -1,7 +1,7 @@
 name: opensearch-dashboards
 base: core24
 
-version: '2.19.6'
+version: '2.19.7'
 
 summary: >-
   OpenSearch Dashboards: community-driven OpenSearch visualization suite.
@@ -128,15 +128,15 @@ parts:
       patch="ubuntu0"
 
       if [[ "${CRAFT_ARCH_BUILD_FOR}" == "arm64" ]]; then
-        release_date="20260724172729"
+        release_date="20261119071107"
         suffix="linux-arm64"
       else
-        release_date="20260809162516"
+        release_date="20261119062237"
         suffix="linux-x64"
       fi
       archive="opensearch-dashboards-${version}-${patch}-${release_date}-${suffix}.tar.gz"
 
-      milestone="dashboards-${version}-${CRAFT_ARCH_BUILD_FOR}-${patch}"
+      milestone="${version}-${CRAFT_ARCH_BUILD_FOR}-${patch}"
       url="https://launchpad.net/opensearch-dashboards-releases/${series}/${milestone}/+download/${archive}"
       curl -L --fail --retry 5 --retry-delay 10 --retry-connrefused \
         -o "${archive}" "${url}"
