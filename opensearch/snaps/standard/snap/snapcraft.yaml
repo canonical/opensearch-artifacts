@@ -245,6 +245,27 @@ apps:
     plugs:
       - mount-observe
 
+  plugins-security-securityadmin:
+    command: opt/opensearch/plugins-wrapper.sh
+    plugs:
+      - network
+      - network-bind
+    environment:
+      plugin_tool: opensearch-security/tools/securityadmin.sh
+
+  plugins-security-hash:
+    command: opt/opensearch/plugins-wrapper.sh
+    environment:
+      plugin_tool: opensearch-security/tools/hash.sh
+
+  plugins-security-audit-config-migrater:
+    command: opt/opensearch/plugins-wrapper.sh
+    plugs:
+      - network
+      - network-bind
+    environment:
+      plugin_tool: opensearch-security/tools/audit_config_migrater.sh
+
 parts:
   dependencies:
     plugin: nil
