@@ -79,6 +79,7 @@ function edit_yaml_setting() {
     shift 3
     "${SNAP}"/usr/bin/yq -y -i --arg k "${key}" "$@" '
         [paths | select(all(.[]; type == "string") and join(".") == $k)] as $paths
+        | (if $paths | length > 0 then getpath($paths[-1]) else null end) as $old
         | delpaths($paths)
         | '"${operation}" "${target_file}"
 }
@@ -96,6 +97,30 @@ function set_yaml_setting_json() {
 # Removes every spelling of a setting
 function remove_yaml_setting() {
     edit_yaml_setting "${1}" "${2}" '.'
+}
+
+# Read the effective spelling, including nested and dotted settings.
+function get_yaml_prop() {
+    "${SNAP}"/usr/bin/yq -r --arg k "${2}" '
+        [paths | select(all(.[]; type == "string") and join(".") == $k)] as $paths
+        | if $paths | length > 0 then getpath($paths[-1]) else empty end
+    ' "${1}"
+}
+
+function set_yaml_list() {
+    local target_file="${1}" key="${2}" item
+    shift 2
+    set_yaml_setting_json "${target_file}" "${key}" '[]'
+    for item in "$@"; do
+        add_yaml_list_item "${target_file}" "${key}" "${item}"
+    done
+}
+
+# Keep peer DNs intact when renewing this node's certificate.
+function add_yaml_list_item() {
+    edit_yaml_setting "${1}" "${2}" \
+        '.[$k] = (($old // []) | (if type == "array" then . else [.] end)
+                   | if any(.[]; . == $v) then . else . + [$v] end)' --arg v "${3}"
 }
 
 
