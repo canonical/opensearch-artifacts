@@ -229,6 +229,7 @@ apps:
     plugs:
       - network
       - network-bind
+      - shmem-perf-analyzer
     environment:
       bin_script: opensearch-performance-analyzer/performance-analyzer-agent
 
@@ -237,6 +238,7 @@ apps:
     plugs:
       - network
       - network-bind
+      - shmem-perf-analyzer
     environment:
       bin_script: opensearch-performance-analyzer/performance-analyzer-agent-cli
 
@@ -375,6 +377,15 @@ parts:
           "${CRAFT_PART_INSTALL}/usr/share/opensearch/bin/opensearch-env"
       grep -q '^OPENSEARCH_BUNDLED_JDK=true$' \
           "${CRAFT_PART_INSTALL}/usr/share/opensearch/bin/opensearch-env"
+
+      # The native analyzer CLI assumes its launcher and RCA libraries live
+      # directly under OPENSEARCH_HOME. Keep the 2.x writable home, resolving
+      # the launcher from the snap and libraries from the installed plugin.
+      pa_cli="${CRAFT_PART_INSTALL}/usr/share/opensearch/bin/opensearch-performance-analyzer/performance-analyzer-agent-cli"
+      sed -i \
+          -e 's@exec $OPENSEARCH_HOME/bin/opensearch-cli@exec "$OPENSEARCH_BIN/opensearch-cli"@' \
+          -e 's@OPENSEARCH_ADDITIONAL_CLASSPATH_DIRECTORIES=performance-analyzer-rca/lib@OPENSEARCH_ADDITIONAL_CLASSPATH_DIRECTORIES=plugins/opensearch-performance-analyzer/performance-analyzer-rca/lib@' \
+          "${pa_cli}"
 
       # Final clean-up
       rm "${archive}"
