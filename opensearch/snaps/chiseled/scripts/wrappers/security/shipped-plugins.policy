@@ -1,0 +1,7 @@
+// The plugins directory is made of symlinks to the read-only shipped plugins,
+// which OpenSearch resolves to their real path. Allow reading them there, as
+// some plugins open their own jars (e.g. opensearch-security-analytics).
+// snap.path is set by start.sh to the current revision's $SNAP.
+grant {
+  permission java.io.FilePermission "${snap.path}/usr/share/opensearch/shipped-plugins/-", "read,readlink";
+};

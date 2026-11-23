@@ -2,16 +2,20 @@
 
 set -eu
 
+source "${OPS_ROOT}"/helpers/read-option-value.sh
+
 
 usage() {
 cat << EOF
-usage: create-certificate.sh --password password ...
+usage: create-certificate.sh --type root ...
 To be ran / setup once per cluster.
---password        (Required)    Password for encrypting the key
 --type            (Required)    Enum of either: root, admin, node, client
---root-password   (Optional)    Password for encrypting the root key
+--password        (Optional)    Password for encrypting the key. If unset, the key is generated unencrypted.
+--root-password   (Optional)    Passphrase of the root key when signing, defaults to --password
 --name            (Optional)    Name of certificate: required for nodes and clients
 --subject         (Optional)    Subject for the certificate, defaults to CN=localhost
+--sans            (Optional)    Subject alternative names for nodes and clients, e.g: DNS:node1,IP:10.0.0.1
+                                Defaults to DNS:<CN of the subject>
 --target-dir      (Optional)    The target directory where the certificates and related resources are created
 --help                          Shows help menu
 EOF
@@ -33,53 +37,58 @@ root_password=""
 type=""
 res_name=""
 subject=""
+sans=""
 target_dir=""
 
 
 # Args handling
 function parse_args () {
-    local LONG_OPTS_LIST=(
-        "password"
-        "root-password"
-        "type"
-        "name"
-        "subject"
-        "target-dir"
-        "help"
-    )
-    local opts=$(getopt \
-      --longoptions "$(printf "%s:," "${LONG_OPTS_LIST[@]}")" \
-      --name "$(readlink -f "${BASH_SOURCE}")" \
-      --options "" \
-      -- "$@"
-    )
-    eval set -- "${opts}"
-
-    while [ $# -gt 0 ]; do
-        case $1 in
-            --password) shift
-                password=$1
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --password|--password=*)
+                read_option_value "$@" || return 1
+                password="$option_value"
+                shift "$option_arguments"
                 ;;
-            --root-password) shift
-                root_password=$1
+            --root-password|--root-password=*)
+                read_option_value "$@" || return 1
+                root_password="$option_value"
+                shift "$option_arguments"
                 ;;
-            --type) shift
-                type=$1
+            --type|--type=*)
+                read_option_value "$@" || return 1
+                type="$option_value"
+                shift "$option_arguments"
                 ;;
-            --name) shift
-                res_name=$1
+            --name|--name=*)
+                read_option_value "$@" || return 1
+                res_name="$option_value"
+                shift "$option_arguments"
                 ;;
-            --subject) shift
-                subject=$1
+            --subject|--subject=*)
+                read_option_value "$@" || return 1
+                subject="$option_value"
+                shift "$option_arguments"
                 ;;
-            --target-dir) shift
-                target_dir=$1
+            --sans|--sans=*)
+                read_option_value "$@" || return 1
+                sans="$option_value"
+                shift "$option_arguments"
                 ;;
-            --help) usage
-                exit
+            --target-dir|--target-dir=*)
+                read_option_value "$@" || return 1
+                target_dir="$option_value"
+                shift "$option_arguments"
+                ;;
+            --help)
+                usage
+                exit 0
+                ;;
+            *)
+                echo "Unknown argument: $1" >&2
+                return 1
                 ;;
         esac
-        shift
     done
 }
 
@@ -105,13 +114,6 @@ function set_defaults () {
 
 function validate_args () {
     err_message=""
-#    if [ -z "${password}" ]; then
-#        err_message=" - '--password' is required \n"
-#    fi
-
-    if [ -z "${root_password}" ] && [ "${type}" != "root" ]; then
-        err_message="${err_message}- '--root-password' must be set.\n"
-    fi
 
     if ! echo "${ALLOWED_CERT_TYPES[*]}" | grep -wq "${type}"; then
         err_message="${err_message}- '--type' must be set to one of: ${ALLOWED_CERT_TYPES[*]}.\n"
@@ -139,50 +141,79 @@ function validate_args () {
 # Certs creation
 function create_root_certificate () {
     # generate a private key
-    openssl genrsa \
-        -out "${target_dir}/root-ca-key.pem" \
-        -aes256 \
-        -passout pass:"${password}" \
-        ${KEY_SIZE_BITS}
+    if [ -n "${password}" ]; then
+        openssl genrsa \
+            -out "${target_dir}/root-ca-key.pem" \
+            -aes256 \
+            -passout pass:"${password}" \
+            ${KEY_SIZE_BITS}
+    else
+        openssl genrsa \
+            -out "${target_dir}/root-ca-key.pem" \
+            ${KEY_SIZE_BITS}
+    fi
 
-    # generate a root certificate
+    # Give new root ceertificates explicit CA signing permissions so strict TLS clients accept them.
+    local passin_args=()
+    if [ -n "${password}" ]; then
+        passin_args=(-passin pass:"${password}")
+    fi
     openssl req \
         -new \
         -x509 \
         -sha256 \
-        -passin pass:"${password}" \
-        -passout pass:"${password}" \
+        "${passin_args[@]}" \
         -key "${target_dir}/root-ca-key.pem" \
         -out "${target_dir}/root-ca.pem" \
         -subj "${subject}" \
+        -addext "basicConstraints=critical,CA:TRUE" \
+        -addext "keyUsage=critical,keyCertSign,cRLSign" \
         -days ${LIFESPAN_DAYS}
 }
 
 
 function create_certificate () {
     # generate a private key certificate
-    openssl genrsa \
-        -out "${target_dir}/${res_name}-key-temp.pem" \
-        -aes256 \
-        -passout pass:"${password}" \
-        ${KEY_SIZE_BITS}
+    if [ -n "${password}" ]; then
+        openssl genrsa \
+            -out "${target_dir}/${res_name}-key-temp.pem" \
+            -aes256 \
+            -passout pass:"${password}" \
+            ${KEY_SIZE_BITS}
+    else
+        openssl genrsa \
+            -out "${target_dir}/${res_name}-key-temp.pem" \
+            ${KEY_SIZE_BITS}
+    fi
 
-    # convert created key to PKS-8 Java compatible format
-    openssl pkcs8 \
-        -inform PEM \
-        -outform PEM \
-        -in "${target_dir}/${res_name}-key-temp.pem" \
-        -topk8 \
-        -v1 PBE-SHA1-3DES \
-        -passout pass:"${password}" \
-        -passin pass:"${password}" \
-        -out "${target_dir}/${res_name}-key.pem"
+    # convert created key to PKS-8 Java compatible format, encrypted
+    # only when a password is provided
+    local pkcs8_args=(
+        "-inform" "PEM"
+        "-outform" "PEM"
+        "-in" "${target_dir}/${res_name}-key-temp.pem"
+        "-topk8"
+    )
+    if [ -n "${password}" ]; then
+        pkcs8_args+=(
+            "-v1" "PBE-SHA1-3DES"
+            "-passout" "pass:${password}"
+            "-passin" "pass:${password}"
+        )
+    else
+        pkcs8_args+=("-nocrypt")
+    fi
+    pkcs8_args+=("-out" "${target_dir}/${res_name}-key.pem")
+    openssl pkcs8 "${pkcs8_args[@]}"
 
     # create a CSR
+    local passin_args=()
+    if [ -n "${password}" ]; then
+        passin_args=(-passin pass:"${password}")
+    fi
     openssl req \
         -new \
-        -passout pass:"${password}" \
-        -passin pass:"${password}" \
+        "${passin_args[@]}" \
         -key "${target_dir}/${res_name}-key.pem" \
         -subj "${subject}" \
         -out "${target_dir}/${res_name}.csr"
@@ -192,18 +223,26 @@ function create_certificate () {
         "x509"
         "-req"
         "-in" "${target_dir}/${res_name}.csr"
-        "-CA" "${target_dir}/root-ca.pem"
-        "-CAkey" "${target_dir}/root-ca-key.pem"
+        "-CA" "${ca_dir}/root-ca.pem"
+        "-CAkey" "${ca_dir}/root-ca-key.pem"
+        # Keep serial-number updates in staging until the replacement is validated.
+        "-CAserial" "${target_dir}/root-ca.srl"
         "-CAcreateserial"
         "-sha256"
-        "-passin" "pass:${root_password}"
         "-out" "${target_dir}/${res_name}.pem"
         "-days" "${LIFESPAN_DAYS}"
     )
 
+    if [ -n "${root_password}" ]; then
+        gen_cert_args+=("-passin" "pass:${root_password}")
+    fi
+
     if [ "${type}" == "node" ] || [ "${type}" == "client" ]; then
-        CN="${subject##*'CN='}"
-        echo "subjectAltName=DNS:${CN}" > "${target_dir}/${res_name}.ext"
+        if [ -z "${sans}" ]; then
+            CN="${subject##*'CN='}"
+            sans="DNS:${CN}"
+        fi
+        echo "subjectAltName=${sans}" > "${target_dir}/${res_name}.ext"
         gen_cert_args+=(
             "-extfile" "${target_dir}/${res_name}.ext"
         )
@@ -218,14 +257,97 @@ function create_certificate () {
 }
 
 
+# Generate and validate a complete replacement before changing the live files.
+# The subshell keeps temporary paths and cleanup traps out of the calling wrapper.
+function generate_and_publish_certificate () (
+    [ -d "${target_dir}" ] || mkdir -p "${target_dir}"
+    ca_dir=${target_dir}
+    final_dir=${target_dir}
+
+    if [[ "${type}" == root ]]; then
+        pair_name=root-ca
+    else
+        pair_name=${res_name}
+    fi
+
+    files=("${pair_name}-key.pem" "${pair_name}.pem")
+    if [[ "${type}" != root ]]; then
+        files+=(root-ca.srl)
+    fi
+
+    target_dir=$(mktemp -d "${final_dir}/.certificate-XXXXXX")
+    published=()
+    cleanup() {
+        local status=$?
+        local file
+        if (( status != 0 )); then
+            # Restore any file replaced before a later rename failed.
+            for file in "${published[@]}"; do
+                if [[ -e "${target_dir}/old-${file}" ]]; then
+                    if [[ ! "${target_dir}/old-${file}" -ef "${final_dir}/${file}" ]]; then
+                        mv -f "${target_dir}/old-${file}" "${final_dir}/${file}"
+                    fi
+                else
+                    rm -f "${final_dir}/${file}"
+                fi
+            done
+        fi
+        rm -rf "${target_dir}"
+        exit "${status}"
+    }
+    trap cleanup EXIT
+    trap 'exit 1' HUP INT TERM
+
+    # Keep the old files available without copying their contents.
+    for file in "${files[@]}"; do
+        if [[ -e "${final_dir}/${file}" || -L "${final_dir}/${file}" ]]; then
+            [[ -f "${final_dir}/${file}" && ! -L "${final_dir}/${file}" ]] || exit 1
+            ln "${final_dir}/${file}" "${target_dir}/old-${file}"
+        fi
+    done
+
+    # Generate in staging; leaf certificates still use the existing CA.
+    if [[ "${type}" == root ]]; then
+        create_root_certificate
+        verify_ca=${target_dir}/root-ca.pem
+    else
+        if [[ -f "${final_dir}/root-ca.srl" ]]; then
+            cp "${final_dir}/root-ca.srl" "${target_dir}/root-ca.srl"
+        fi
+        create_certificate
+        verify_ca=${ca_dir}/root-ca.pem
+    fi
+
+    # Check that the key matches and the CA validates the certificate.
+    openssl pkey \
+        -in "${target_dir}/${pair_name}-key.pem" \
+        -passin "pass:${password}" \
+        -pubout > "${target_dir}/key-public.pem"
+
+    openssl x509 \
+        -in "${target_dir}/${pair_name}.pem" \
+        -pubkey -noout > "${target_dir}/cert-public.pem"
+
+    cmp "${target_dir}/key-public.pem" "${target_dir}/cert-public.pem"
+    openssl verify -CAfile "${verify_ca}" "${target_dir}/${pair_name}.pem"
+
+    # Prepare metadata before changing any live file.
+    for file in "${files[@]}"; do
+        if [[ -e "${target_dir}/old-${file}" ]]; then
+            chmod --reference="${target_dir}/old-${file}" "${target_dir}/${file}"
+            chown --reference="${target_dir}/old-${file}" "${target_dir}/${file}"
+        fi
+    done
+
+    # Each rename is atomic
+    for file in "${files[@]}"; do
+        published+=("${file}")
+        mv -f "${target_dir}/${file}" "${final_dir}/${file}"
+    done
+)
+
+
 parse_args "$@"
 set_defaults
 validate_args
-
-[ -d "${target_dir}" ] || mkdir -p "${target_dir}"
-
-if [[ "${type}" == "root" ]]; then
-    create_root_certificate
-else
-    create_certificate
-fi
+generate_and_publish_certificate
