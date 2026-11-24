@@ -1,7 +1,7 @@
 name: opensearch-dashboards-charmed
 base: core26
 
-version: '3.8.0'
+version: '3.10.0'
 
 # yamllint disable-line rule:line-length
 summary: 'OpenSearch Dashboards: community-driven OpenSearch visualization suite.'
@@ -142,10 +142,10 @@ parts:
 
       # If architecture is arm64
       if [[ "$CRAFT_ARCH_BUILD_FOR" == "arm64" ]]; then
-        release_date="20260827083212"
+        release_date="20261119111141"
         archive="opensearch-dashboards-${version}-${patch}-${release_date}-linux-arm64.tar.gz"
       else
-        release_date="20260827083326"
+        release_date="20261119105228"
         archive="opensearch-dashboards-${version}-${patch}-${release_date}-linux-x64.tar.gz"
       fi
 
