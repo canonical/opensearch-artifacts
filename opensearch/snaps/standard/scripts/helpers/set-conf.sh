@@ -74,6 +74,31 @@ function set_yaml_prop() {
 }
 
 
+function edit_yaml_setting() {
+    local target_file="${1}" key="${2}" operation="${3}"
+    shift 3
+    "${SNAP}"/usr/bin/yq -y -i --arg k "${key}" "$@" '
+        [paths | select(all(.[]; type == "string") and join(".") == $k)] as $paths
+        | delpaths($paths)
+        | '"${operation}" "${target_file}"
+}
+
+# Sets a setting to a string, e.g. set_yaml_setting f cluster.name "a,b"
+function set_yaml_setting() {
+    edit_yaml_setting "${1}" "${2}" '.[$k] = $v' --arg v "${3}"
+}
+
+# Sets a setting to a JSON value, e.g. set_yaml_setting_json f node.roles '[]'
+function set_yaml_setting_json() {
+    edit_yaml_setting "${1}" "${2}" '.[$k] = $v' --argjson v "${3}"
+}
+
+# Removes every spelling of a setting
+function remove_yaml_setting() {
+    edit_yaml_setting "${1}" "${2}" '.'
+}
+
+
 #function set_python_prop () {
 #    python3 \
 #        "${OPS_ROOT}"/helpers/conf-setter.py \
