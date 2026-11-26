@@ -2,10 +2,12 @@
 
 set -eu
 
+source "${OPS_ROOT}"/helpers/read-option-value.sh
+
 
 usage() {
 cat << EOF
-usage: start.sh --init-security yes --tls-priv-key-admin-pass ...
+usage: security-init.sh --tls-priv-key-admin-pass ...
 To be ran / setup once per cluster - or when wanting to rebuild the security index.
 --tls-priv-key-admin-pass  (Optional) Passphrase of the admin key
 --help                                Shows help menu
@@ -19,29 +21,22 @@ tls_priv_key_admin_pass=""
 
 # Args handling
 function parse_args () {
-    # init-security boolean - from the charm, this should be based on a flag on the app data bag.
-    local LONG_OPTS_LIST=(
-        "tls-priv-key-admin-pass"
-        "help"
-    )
-    local opts=$(getopt \
-      --longoptions "$(printf "%s:," "${LONG_OPTS_LIST[@]}")" \
-      --name "$(readlink -f "${BASH_SOURCE}")" \
-      --options "" \
-      -- "$@"
-    )
-    eval set -- "${opts}"
-
-    while [ $# -gt 0 ]; do
-        case $1 in
-            --tls-priv-key-admin-pass) shift
-                tls_priv_key_admin_pass=$1
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --tls-priv-key-admin-pass|--tls-priv-key-admin-pass=*)
+                read_option_value "$@" || return 1
+                tls_priv_key_admin_pass="$option_value"
+                shift "$option_arguments"
                 ;;
-            --help) usage
-                exit
+            --help)
+                usage
+                exit 0
+                ;;
+            *)
+                echo "Unknown argument: $1" >&2
+                return 1
                 ;;
         esac
-        shift
     done
 
     # in case those are set through snap.set
@@ -59,10 +54,12 @@ function init_security_plugin () {
     )
 
     if [ -n "${tls_priv_key_admin_pass}" ]; then
-        sec_args+=("-keypass" "${tls_priv_key_admin_pass}")
+        # The native parser treats a passphrase such as -cacert as an option.
+        # Its supported environment input preserves arbitrary literal text.
+        export OPENDISTRO_SECURITY_KEYPASS="${tls_priv_key_admin_pass}"
     fi
 
-    source \
+    bash \
         "${OPENSEARCH_PLUGINS}/opensearch-security/tools/securityadmin.sh" \
         "${sec_args[@]}"
 }

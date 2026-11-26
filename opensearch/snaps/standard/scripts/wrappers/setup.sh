@@ -188,6 +188,24 @@ tls_for_rest=""
 
 # Args handling
 function parse_args() {
+    # GNU getopt otherwise accepts the next flag as a required value. Keep
+    # explicit --option=--literal values, but reject an accidentally omitted one.
+    local expected_value="" argument
+    for argument in "$@"; do
+        if [ -n "${expected_value}" ]; then
+            if [[ "${argument}" == --* ]]; then
+                echo "ERROR: missing value for ${expected_value}; use ${expected_value}=<value> for values starting with --." >&2
+                return 1
+            fi
+            expected_value=""
+            continue
+        fi
+        case "${argument}" in
+            --) break ;;
+            --*=*|--help) ;;
+            --*) expected_value="${argument}" ;;
+        esac
+    done
     local LONG_OPTS_LIST=(
         "cluster-name"
         "node-name"
@@ -204,15 +222,14 @@ function parse_args() {
         "tls-priv-key-node-pass"
         "tls-node-subject"
         "tls-for-rest"
-        "help"
     )
-    # shellcheck disable=SC2155
-    local opts=$(getopt \
-      --longoptions "$(printf "%s:," "${LONG_OPTS_LIST[@]}")" \
+    local opts
+    opts=$(getopt \
+      --longoptions "$(printf "%s:," "${LONG_OPTS_LIST[@]}")help" \
       --name "$(readlink -f "${BASH_SOURCE}")" \
       --options "" \
       -- "$@"
-    )
+    ) || return 1
     eval set -- "${opts}"
 
     while [ $# -gt 0 ]; do
@@ -264,6 +281,13 @@ function parse_args() {
                 ;;
             --help) usage
                 exit
+                ;;
+            --) shift
+                if [ "$#" -ne 0 ]; then
+                    echo "ERROR: unexpected argument '$1'." >&2
+                    return 1
+                fi
+                break
                 ;;
         esac
         shift
@@ -338,54 +362,65 @@ validate_args
 
 
 opensearch_yaml="${OPENSEARCH_PATH_CONF}/opensearch.yml"
-set_yaml_prop "${opensearch_yaml}" "cluster.name" "${cluster_name}"
-set_yaml_prop "${opensearch_yaml}" "node.name" "${node_name}"
-set_yaml_prop "${opensearch_yaml}" "node.roles" "${node_roles}"
-set_yaml_prop "${opensearch_yaml}" "network.host" "${node_host}"
-set_yaml_prop "${opensearch_yaml}" "discovery.seed_hosts" "${seed_hosts}"
+# Keep the legacy list syntax while replacing nested/dotted spellings exactly
+# as -E does, so the two entry points cannot create duplicate engine settings.
+function set_legacy_setting() {
+    local key="${1}" value="${2}"
+    if [[ "${value}" == \[* ]]; then
+        value="$(printf '%s' "${value}" | "${SNAP}"/usr/bin/yq -c '.')" || return 1
+        set_yaml_setting_json "${opensearch_yaml}" "${key}" "${value}"
+    else
+        set_yaml_setting "${opensearch_yaml}" "${key}" "${value}"
+    fi
+}
+set_yaml_setting "${opensearch_yaml}" "cluster.name" "${cluster_name}"
+set_yaml_setting "${opensearch_yaml}" "node.name" "${node_name}"
+set_legacy_setting "node.roles" "${node_roles}"
+set_legacy_setting "network.host" "${node_host}"
+set_legacy_setting "discovery.seed_hosts" "${seed_hosts}"
 
 if [ -n "${initial_cluster_manager_nodes}" ]; then
-    set_yaml_prop "${opensearch_yaml}" "cluster.initial_cluster_manager_nodes" "${initial_cluster_manager_nodes}"
+    set_legacy_setting "cluster.initial_cluster_manager_nodes" "${initial_cluster_manager_nodes}"
 fi
 
 if [ "${security_disabled}" == "yes" ]; then
-    set_yaml_prop "${opensearch_yaml}" "plugins.security.disabled" "true"
+    set_yaml_setting "${opensearch_yaml}" "plugins.security.disabled" "true"
 else
-    set_yaml_prop "${opensearch_yaml}" "plugins.security.disabled" "false"
+    set_yaml_setting "${opensearch_yaml}" "plugins.security.disabled" "false"
 fi
 
-if [ "${tls_self_managed}" ]; then
+if [ "${tls_self_managed}" == "yes" ]; then
     TLS_DIR="${OPS_ROOT}/security/tls"
 
     if [ "${tls_init_setup}" == "yes" ]; then
         # create root and admin certs
         source \
             "${TLS_DIR}"/self-managed-init.sh \
-                --root-password "${tls_priv_key_root_pass}" \
-                --admin-password "${tls_priv_key_admin_pass}" \
-                --root-subject "${tls_root_subject}" \
-                --admin-subject "${tls_admin_subject}" \
-                --rest-with-tls "${tls_for_rest}" \
-                --target-dir "${OPENSEARCH_PATH_CERTS}"
+                --root-password="${tls_priv_key_root_pass}" \
+                --admin-password="${tls_priv_key_admin_pass}" \
+                --root-subject="${tls_root_subject}" \
+                --admin-subject="${tls_admin_subject}" \
+                --rest-with-tls="${tls_for_rest}" \
+                --target-dir="${OPENSEARCH_PATH_CERTS}"
 
         keys=("root-ca" "root-ca-key" "admin" "admin-key")
         for key in "${keys[@]}"; do
-            set_access_restrictions "${OPENSEARCH_PATH_CERTS}/${key}.pem" 664
+            set_access_restrictions "${OPENSEARCH_PATH_CERTS}/${key}.pem" 660
         done
     fi
 
     # create node cert
     source \
         "${TLS_DIR}"/self-managed-node.sh \
-            --name "${node_name}" \
-            --root-password "${tls_priv_key_root_pass}" \
-            --node-password "${tls_priv_key_node_pass}" \
-            --node-subject "${tls_node_subject}" \
-            --rest-with-tls "${tls_for_rest}" \
-            --target-dir "${OPENSEARCH_PATH_CERTS}"
+            --name="${node_name}" \
+            --root-password="${tls_priv_key_root_pass}" \
+            --node-password="${tls_priv_key_node_pass}" \
+            --node-subject="${tls_node_subject}" \
+            --rest-with-tls="${tls_for_rest}" \
+            --target-dir="${OPENSEARCH_PATH_CERTS}"
 
     keys=("node-${node_name}" "node-${node_name}-key")
     for key in "${keys[@]}"; do
-        set_access_restrictions "${OPENSEARCH_PATH_CERTS}/${key}.pem" 664
+        set_access_restrictions "${OPENSEARCH_PATH_CERTS}/${key}.pem" 660
     done
 fi
