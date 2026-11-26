@@ -43,6 +43,25 @@ sudo snap run opensearch.setup          \
     --tls-init-setup yes    # this creates the root and admin certs as well.
 ```
 
+#### Setting OpenSearch settings:
+As with the upstream `opensearch` command, any setting can also be written to
+`opensearch.yml` with `-E <setting>=<value>`. This mode only changes settings:
+it does not create certificates, and it cannot be mixed with the flags above.
+```
+sudo snap run opensearch.setup \
+    -Ecluster.name=logs \
+    -Enode.roles=cluster_manager,data \
+    -Ediscovery.seed_hosts=10.0.0.1,10.0.0.2
+```
+- The value is written as a string. Like upstream, list settings accept comma
+  separated values.
+- A value in brackets is a YAML list, e.g. `-Enode.roles=[]` for a
+  coordinating-only node. Quote entries that contain commas:
+  `-Eplugins.security.nodes_dn='["CN=a,OU=x","CN=b,OU=x"]'`.
+- An empty value removes the setting, e.g. `-Ehttp.port=`.
+
+Restart the daemon to apply new settings: `sudo snap restart opensearch.daemon`.
+
 #### Starting OpenSearch:
 ```
 sudo snap start opensearch.daemon
