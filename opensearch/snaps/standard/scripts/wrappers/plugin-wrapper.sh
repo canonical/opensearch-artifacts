@@ -2,4 +2,6 @@
 
 set -e -o pipefail
 
-snap run --shell opensearch.daemon -- /snap/opensearch/current/usr/share/opensearch/bin/opensearch-plugin.orig "${@}"
+# Keep the historical filesystem entry point, with the same account and group
+# as the supported app (custom plugins can install configuration and bin files).
+exec snap run opensearch.plugin "${@}"

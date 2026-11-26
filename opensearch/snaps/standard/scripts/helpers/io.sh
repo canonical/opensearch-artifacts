@@ -5,7 +5,15 @@ set -eu
 
 function set_access_restrictions () {
     if [[ $# -eq 2 ]]; then
-        chmod -R "${2}" "${1}"
+        # Confined root cannot chmod files already owned by snap_daemon.
+        # Reconfiguration must use the owner, just as truststore refresh does.
+        if [ "$(stat -c %U -- "${1}")" = snap_daemon ]; then
+            "${SNAP}"/usr/bin/setpriv \
+                --clear-groups --reuid snap_daemon --regid root -- \
+                chmod -R "${2}" "${1}"
+        else
+            chmod -R "${2}" "${1}"
+        fi
     fi
 
     chown -R snap_daemon "${1}"
