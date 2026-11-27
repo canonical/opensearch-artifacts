@@ -12,42 +12,32 @@ suites:
     prepare-each: |
       apt update
       apt install -y curl yq
+
       if ! command -v docker >/dev/null 2>&1; then
         apt install -y docker.io
       fi
+
+      snap install lxd
+      lxd waitready --timeout=120
       snap install rockcraft --classic --edge
 
-      # Required kernel parameters for the OpenSearch container.
       sysctl -w vm.swappiness=0
       sysctl -w vm.max_map_count=262144
       sysctl -w net.ipv4.tcp_retries2=5
-
-      docker system prune --all --force || true
-      df -h /
 
       version="$(yq -r .version "${PROJECT_PATH}/rockcraft.yaml")"
       base="$(yq -r .base "${PROJECT_PATH}/rockcraft.yaml")"
 
       # Import the rock into docker
-      if ! rockcraft.skopeo --insecure-policy copy \
+      rockcraft.skopeo --insecure-policy copy \
         oci-archive:"${CRAFT_ARTIFACT}" \
-        docker-daemon:opensearch-dashboards:"${version}"; then
-        echo "Failed to import the rock into Docker."
-        df -h /
-        docker system df || true
-        journalctl --no-pager --unit docker --lines 100 || true
-        exit 1
-      fi
-
-      # The packed project still holds a copy of the rock we no longer need.
-      rm -f "${CRAFT_ARTIFACT}"
+        docker-daemon:opensearch-dashboards:"${version}"
 
       os_img="ghcr.io/canonical/opensearch:${version}-${base#*@}_edge"
       docker pull "${os_img}"
       docker tag "${os_img}" opensearch:"${version}"
-      df -h /
     restore-each: |
-      docker rm -f dashboards cm0 2>/dev/null || true
+      docker rm -f osd osd-plain osd-fail cm0 plain 2>/dev/null || true
       docker network rm osd-net 2>/dev/null || true
       version="$(yq -r .version "${PROJECT_PATH}/rockcraft.yaml")"
       base="$(yq -r .base "${PROJECT_PATH}/rockcraft.yaml")"

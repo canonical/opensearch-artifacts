@@ -3,150 +3,259 @@ summary: OpenSearch Dashboards Rock Smoke Test
 execute: |
   version="$(yq -r .version "${PROJECT_PATH}/rockcraft.yaml")"
 
-  # Go template used to read a container's IP address.
-  ip_format='{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'
+  # Same contract as the upstream images: OpenSearch starts with the demo
+  # security configuration, whose kibanaserver user is the one of the
+  # default opensearch_dashboards.yml.
+  admin_password="Sm0ke-Test_Pa55word!"
+  auth=(-u "admin:${admin_password}")
+  conf_dir=/usr/share/opensearch-dashboards/config
+  conf="${conf_dir}/opensearch_dashboards.yml"
 
-  dump_diagnostics() {
-      echo "--- container state"
-      docker inspect \
-          -f 'status={{.State.Status}} exit={{.State.ExitCode}}' \
-          dashboards || true
-      echo "--- pebble services"
-      docker exec dashboards /usr/bin/pebble services || true
-      echo "--- container logs"
-      docker logs dashboards 2>&1 | tail -50 || true
-      echo "--- dashboards log file"
-      docker exec dashboards \
-          sh -c 'tail -50 /var/log/opensearch-dashboards/*.log' || true
-      echo "--- effective configuration"
-      docker exec dashboards \
-          cat /etc/opensearch-dashboards/opensearch_dashboards.yml || true
-  }
-
+  # wait_for_opensearch <container> <url> [curl options]
+  # Until the security index is initialized, the node answers in plain
+  # text: ignore jq failures.
   wait_for_opensearch() {
-      local reported
-      for _ in $(seq 60); do
-          reported="$(curl -sk --max-time 3 http://127.0.0.1:9200 \
-              | jq -r '.name // empty')"
-          if [ "${reported}" = "cm0" ]; then
-              echo "OpenSearch answered on port 9200"
+      local name="$1" url="$2" reported
+      shift 2
+      for _ in $(seq 1 60); do
+          reported="$(curl -s --max-time 3 "${url}" "$@" \
+              | jq -r '.name // empty' 2>/dev/null || true)"
+          if [ "${reported}" = "${name}" ]; then
+              echo "OpenSearch ${name} answered on ${url}"
               return 0
           fi
           sleep 3
       done
-      echo "Error: OpenSearch did not answer on port 9200 within 180s."
-      docker logs cm0 2>&1 | tail -50 || true
+      echo "Error: OpenSearch ${name} did not answer on ${url} within 180s."
+      docker logs --tail 50 "${name}" || true
       return 1
   }
 
-  # Set by wait_for_dashboards to the /api/status body it accepted.
+  # wait_for_dashboards <container> <port> [curl options]
   status_resp=""
   wait_for_dashboards() {
-      local resp state
-      for _ in $(seq 100); do
-          state="$(docker inspect -f '{{.State.Status}}' dashboards)"
-          if [ "${state}" != "running" ]; then
-              echo "Error: container is '${state}', expected 'running'."
-              dump_diagnostics
-              return 1
-          fi
-          resp="$(curl -s --max-time 5 \
-              http://127.0.0.1:5601/api/status || true)"
+      local name="$1" port="$2" resp="" state
+      shift 2
+      for _ in $(seq 1 100); do
+          resp="$(curl -s --max-time 5 "$@" \
+              "http://127.0.0.1:${port}/api/status" || true)"
           state="$(echo "${resp}" \
               | jq -r '.status.overall.state // empty' 2>/dev/null || true)"
-          # Dashboards only leaves 'red' once it has reached OpenSearch, so
-          # green/yellow already proves the two are talking to each other.
           if [ "${state}" = "green" ] || [ "${state}" = "yellow" ]; then
               status_resp="${resp}"
-              echo "Dashboards is ready on port 5601 (state ${state})"
+              echo "Dashboards ${name} is ready on port ${port} (${state})"
               return 0
           fi
           sleep 3
       done
-      echo "Error: Dashboards did not become ready on port 5601 in time."
+      echo "Error: Dashboards ${name} did not become ready on port ${port}."
       echo "Last response: ${resp}"
-      dump_diagnostics
+      # Like upstream, Dashboards logs to the output of the container.
+      docker logs --tail 50 "${name}" || true
       return 1
   }
 
-  check_pebble_service() {
-      local name="${1}" services
-      services="$(docker exec dashboards /usr/bin/pebble services)"
-      if ! echo "${services}" | grep -qE "^${name} +enabled +active"; then
-          echo "Error: pebble service '${name}' is not active."
-          echo "${services}"
-          dump_diagnostics
-          exit 1
-      fi
-      echo "Pebble service '${name}' is active"
-  }
-
-  # --- OpenSearch ----------------------------------------------------------
   docker network create osd-net
-  docker run -d \
+
+  # --- OpenSearch backend with the demo security configuration -------------
+  # The demo node certificate is for node-0.example.com, localhost and
+  # 127.0.0.1: the node is also reachable as node-0.example.com.
+  docker run \
+      -d -it \
       --network osd-net \
+      --network-alias node-0.example.com \
+      -e OPENSEARCH_INITIAL_ADMIN_PASSWORD="${admin_password}" \
       -e NODE_NAME=cm0 \
       -e INITIAL_CM_NODES=cm0 \
       -p 9200:9200 \
       --name cm0 \
       opensearch:"${version}"
-  os_ip="$(docker inspect -f "${ip_format}" cm0)"
-  wait_for_opensearch
 
-  # --- Dashboards ----------------------------------------------------------
-  docker run -d \
+  # The CA of the demo certificates, written on the first start
+  for _ in $(seq 1 60); do
+      docker exec cm0 test -s /usr/share/opensearch/config/root-ca.pem \
+          && break
+      sleep 3
+  done
+  docker cp cm0:/usr/share/opensearch/config/root-ca.pem root-ca.pem
+  chmod 644 root-ca.pem
+  wait_for_opensearch cm0 https://127.0.0.1:9200 \
+      --cacert root-ca.pem "${auth[@]}"
+
+  # --- Dashboards with its default configuration ---------------------------
+  # The variables become options of OpenSearch Dashboards: the host, and the
+  # CA to verify the certificate of OpenSearch with.
+  osd_ca="${conf_dir}/opensearch-root-ca.pem"
+  docker run \
+      -d -it \
       --network osd-net \
-      -e OPENSEARCH_HOSTS="[http://${os_ip}:9200]" \
+      -v "${PWD}/root-ca.pem:${osd_ca}:ro" \
+      -e OPENSEARCH_HOSTS='["https://node-0.example.com:9200"]' \
+      -e OPENSEARCH_SSL_CERTIFICATEAUTHORITIES="${osd_ca}" \
+      -e OPENSEARCH_SSL_VERIFICATIONMODE=full \
       -p 5601:5601 \
-      --name dashboards \
+      --name osd \
       opensearch-dashboards:"${version}"
-
-  wait_for_dashboards
-
-  # The service is 'startup: enabled', so Pebble must report it active.
-  check_pebble_service opensearch-dashboards
-
+  wait_for_dashboards osd 5601 "${auth[@]}"
   echo -e "Status Response: \n ${status_resp}"
 
-  reported="$(echo "${status_resp}" | jq -r '.version.number // empty')"
-  if [ "${reported}" != "${version}" ]; then
-      echo "Error: /api/status reports version '${reported}'" \
-        "!= rock ${version}."
-      exit 1
-  fi
-  echo "Dashboards reports version ${reported} via /api/status"
+  echo "=== pebble services ==="
+  docker exec osd /usr/bin/pebble services
 
-  overall_state="$(echo "${status_resp}" \
-      | jq -r '.status.overall.state // empty')"
-  if [ "${overall_state}" != "green" ] && \
-     [ "${overall_state}" != "yellow" ]; then
-      echo "Error: Dashboards overall state is '${overall_state}'" \
-        "(expected green/yellow), so it is not connected to OpenSearch."
-      dump_diagnostics
+  osd_status="$(docker exec osd /usr/bin/pebble services \
+      | awk '$1 == "opensearch-dashboards" {print $3}')"
+  if [ "${osd_status}" != "active" ]; then
+      echo "Error: opensearch-dashboards service is '${osd_status}'."
+      docker logs --tail 50 osd || true
       exit 1
   fi
-  echo "Dashboards overall state is '${overall_state}'" \
-    "(connected to OpenSearch)"
+  echo "opensearch-dashboards service is active"
 
-  os_resp="$(curl -sk --max-time 10 http://127.0.0.1:9200)"
-  os_tagline="$(echo "${os_resp}" | jq -r '.tagline // empty')"
-  os_version="$(echo "${os_resp}" | jq -r '.version.number // empty')"
-  if [ "${os_tagline}" != \
-       "The OpenSearch Project: https://opensearch.org/" ]; then
-      echo "Error: OpenSearch did not respond as expected."
-      echo "${os_resp}"
+  # --- Integration: Dashboards must be talking to OpenSearch ---------------
+  # The overall status only reaches an available state once Dashboards has
+  # successfully connected to its OpenSearch backend.
+  dashboards_version="$(echo "${status_resp}" \
+      | jq -r '.version.number // empty')"
+  if [ "${dashboards_version}" != "${version}" ]; then
+      echo "Error: /api/status reports version '${dashboards_version}'" \
+        "!= ${version}."
       exit 1
   fi
-  echo "OpenSearch is up: ${os_version}"
+  echo "Dashboards reports version ${dashboards_version} via /api/status"
 
-  # --- Guard against a container that comes up and then crash-loops --------
-  sleep 10
-  state="$(docker inspect -f '{{.State.Status}}' dashboards)"
-  if [ "${state}" != "running" ]; then
-      echo "Error: container did not stay running (now '${state}')."
-      dump_diagnostics
+  # The variable is passed as an option, the configuration is not modified:
+  # Dashboards is connected to cm0, the file still has its default host
+  if ! docker exec osd \
+          grep -qxF 'opensearch.hosts: [https://localhost:9200]' "${conf}"; then
+      echo "Error: opensearch_dashboards.yml was modified."
+      docker exec osd grep -vE '^ *(#|$)' "${conf}" || true
       exit 1
   fi
-  check_pebble_service opensearch-dashboards
+  echo "Variables override the settings of opensearch_dashboards.yml"
+
+  # The security plugin redirects unauthenticated browsers to the login page.
+  root_status="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+      http://127.0.0.1:5601)"
+  if [ "${root_status}" != 302 ]; then
+      echo "Error: Dashboards answered ${root_status} on /, expected 302."
+      exit 1
+  fi
+  echo "Dashboards redirects unauthenticated requests"
+
+  # Valid credentials must authenticate against the OpenSearch backend.
+  login_status="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+      -XPOST http://127.0.0.1:5601/auth/login \
+      -H 'Content-Type: application/json' \
+      -H 'osd-xsrf: true' \
+      -d "$(jq -n -c --arg p "${admin_password}" \
+        '{username: "admin", password: $p}')")"
+  if [ "${login_status}" != 200 ]; then
+      echo "Error: login with valid credentials returned ${login_status}."
+      docker logs --tail 50 osd || true
+      exit 1
+  fi
+  echo "Authentication with valid credentials succeeded"
+
+  # Like upstream, the logs are in the output of the container
+  if ! docker logs osd 2>&1 | grep -q "http server running"; then
+      echo "Error: the logs of Dashboards are not in the container logs."
+      docker logs --tail 50 osd || true
+      exit 1
+  fi
+  echo "Dashboards logs to the output of the container"
+
+  # --- The OpenSearch Dashboards tools, as the user of the daemon ----------
+  if ! docker exec osd opensearch-dashboards-plugin list \
+          | grep -q '^securityDashboards@'; then
+      echo "Error: the bundled plugins are not listed."
+      docker exec osd opensearch-dashboards-plugin list || true
+      exit 1
+  fi
+
+  # A custom plugin can be installed and removed
+  plugin_src="${PWD}/smoke-plugin"
+  plugin_dir="${plugin_src}/opensearch-dashboards/smokeTest"
+  mkdir -p "${plugin_dir}"
+  jq -n --arg v "${version}" '{id: "smokeTest", version: "1.0.0",
+    opensearchDashboardsVersion: $v, server: false, ui: false}' \
+    > "${plugin_dir}/opensearch_dashboards.json"
+  (cd "${plugin_src}" && python3 -m zipfile -c smoke-test.zip \
+    opensearch-dashboards)
+  docker cp "${plugin_src}/smoke-test.zip" osd:/tmp/smoke-test.zip
+  docker exec osd opensearch-dashboards-plugin install \
+      file:///tmp/smoke-test.zip
+  if ! docker exec osd opensearch-dashboards-plugin list \
+          | grep -q '^smokeTest@'; then
+      echo "Error: the custom plugin was not installed."
+      exit 1
+  fi
+  docker exec osd opensearch-dashboards-plugin remove smokeTest
+  echo "Plugins can be installed and removed"
+
+  docker exec osd opensearch-dashboards-keystore create
+  echo "smoke-value" | docker exec -i osd \
+      opensearch-dashboards-keystore add --stdin opensearch.password
+  if ! docker exec osd opensearch-dashboards-keystore list \
+          | grep -qx 'opensearch.password'; then
+      echo "Error: the setting is not in the keystore."
+      exit 1
+  fi
+  if ! docker exec osd test -s "${conf_dir}/opensearch_dashboards.keystore"
+  then
+      echo "Error: the keystore is not in ${conf_dir}."
+      exit 1
+  fi
+  echo "The keystore can be managed"
+
+  # --- Security disabled on both sides, read-only configuration ------------
+  docker run \
+      -d -it \
+      --network osd-net \
+      -e DISABLE_SECURITY_PLUGIN=true \
+      -e NODE_NAME=plain \
+      -e discovery.type=single-node \
+      -p 9201:9200 \
+      --name plain \
+      opensearch:"${version}"
+  wait_for_opensearch plain http://127.0.0.1:9201
+
+  # The default configuration, with the settings of the security plugin,
+  # is kept as is: the plugin is disabled with an option.
+  docker cp osd:"${conf}" opensearch_dashboards.yml
+  echo "server.name: read-only-config" >> opensearch_dashboards.yml
+  chmod 444 opensearch_dashboards.yml
+  docker run \
+      -d -it \
+      --network osd-net \
+      -e DISABLE_SECURITY_DASHBOARDS_PLUGIN=true \
+      -e OPENSEARCH_HOSTS=http://plain:9200 \
+      -v "${PWD}/opensearch_dashboards.yml:${conf}:ro" \
+      -p 5602:5601 \
+      --name osd-plain \
+      opensearch-dashboards:"${version}"
+
+  # No credentials: the security plugin is disabled
+  wait_for_dashboards osd-plain 5602
+  server_name="$(echo "${status_resp}" | jq -r '.name // empty')"
+  if [ "${server_name}" != "read-only-config" ]; then
+      echo "Error: server name is '${server_name}'," \
+        "expected read-only-config."
+      exit 1
+  fi
+  echo "Dashboards runs without its security plugin, configuration read-only"
+
+  # --- A failed start stops the container, its logs say why ----------------
+  docker run \
+      -d -it \
+      -e SERVER_PORT=not-a-port \
+      --name osd-fail \
+      opensearch-dashboards:"${version}"
+  timeout 120 docker wait osd-fail
+  if ! docker logs osd-fail 2>&1 | grep -q "server.port"; then
+      echo "Error: the logs do not explain the failed start."
+      docker logs --tail 50 osd-fail || true
+      exit 1
+  fi
+  echo "A failed start stops the container"
 
   echo "All smoke tests passed."
