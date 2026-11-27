@@ -85,6 +85,8 @@ bash "${OPS_ROOT}/helpers/refresh-trust-store.sh" refresh
 # As on install, writable by root through the group: sudo opensearch.keytool
 # manages it. Older installs left it read-only. Its owner (snap_daemon) changes
 # the mode: root lacks the capability to do it under confinement.
+# This is needed for the snap revisions that don't have cacerts.p12 for example 2.18/2.17 snap
+chown snap_daemon "${OPENSEARCH_PATH_CERTS}/cacerts.p12"
 setpriv \
     --clear-groups \
     --reuid snap_daemon \
