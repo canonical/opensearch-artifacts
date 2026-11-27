@@ -24,7 +24,7 @@ The steps outlined below are based on the assumption that you are building the r
 If you are using another version of Ubuntu or another operating system, the process may be different. To avoid any issue with other operating systems you can simply build the image with [multipass](https://multipass.run/):
 
 sudo snap install multipass
-multipass launch 22.04 -n rock-dev
+multipass launch 24.04 -n rock-dev
 multipass shell rock-dev
 
 #### Clone Repository
@@ -129,6 +129,34 @@ with another `OPENSEARCH_PATH_CONF`, the rock stops with an error.
 Like with the upstream image, the output of OpenSearch, including why it failed
 to start, is in the container logs: `docker logs <container>`. When OpenSearch
 stops, so does the container.
+
+### Health checks
+
+The rock has no built-in health check. This one checks that the node answers
+HTTPS, whatever the answer, so it needs no credentials. `-k` skips the
+certificate verification of this request to `localhost`, inside the container:
+
+```bash
+docker run ... \
+  --health-cmd 'curl -sk -o /dev/null https://localhost:9200' \
+  --health-interval 10s --health-timeout 5s --health-retries 3 \
+  --health-start-period 2m \
+  opensearch:"${version}"
+
+docker inspect -f '{{.State.Health.Status}}' <container>
+```
+
+Docker only reports an unhealthy container, it does not restart it. An
+orchestrator can run the same command as a liveness probe.
+
+Before sending requests, wait for the cluster to be ready, as a user allowed to
+read the cluster health. `-f` makes `curl` fail when the status is not reached
+within the timeout:
+
+```bash
+curl -f --cacert root-ca.pem -u admin \
+  'https://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=60s'
+```
 
 ### Security
 
@@ -359,6 +387,96 @@ docker run --rm -i --network container:node1 -v ./admin:/admin:ro \
   -H 'Content-Type: application/json' -d @- <<'EOF'
 [{"op": "add", "path": "/password", "value": "<new-password>"}]
 EOF
+```
+
+#### Encrypted private key
+
+To keep the node key encrypted, give its password to OpenSearch as secure
+settings, in a keystore file created by a one-off container. Mounted
+read-only, the keystore is kept when the container is replaced. Encrypt the
+key, `openssl` asks for the password:
+
+```bash
+sudo openssl pkcs8 -topk8 -v2 aes-256-cbc \
+  -in certs/node1-key.pem -out certs/node1-key-enc.pem
+sudo chown 584792:584792 certs/node1-key-enc.pem
+sudo chmod 600 certs/node1-key-enc.pem
+sudo rm certs/node1-key.pem
+```
+
+Point `pemkey_filepath`, for both `transport` and `http`, to
+`certs/node1-key-enc.pem` in `opensearch.yml`, then create the keystore, the
+container asks for the password:
+
+```bash
+mkdir -m 700 keystore
+sudo chown 584792:584792 keystore
+docker run --rm -it -v ./keystore:/keystore \
+  --entrypoint bash opensearch:"${version}" -c '
+    set -eu
+    read -rsp "Key password: " password
+    echo
+    opensearch-keystore create
+    for layer in transport http; do
+      printf "%s" "${password}" | opensearch-keystore add --stdin \
+        "plugins.security.ssl.${layer}.pemkey_password_secure"
+    done
+    cp /usr/share/opensearch/config/opensearch.keystore /keystore/'
+```
+
+Mount it in the node:
+
+```bash
+docker run ... \
+  -v ./keystore/opensearch.keystore:/usr/share/opensearch/config/opensearch.keystore:ro \
+  opensearch:"${version}"
+```
+
+### Moving from the upstream image
+
+The upstream image runs OpenSearch as the user 1000, the rock as `_daemon_`
+(584792). Before using the data of an upstream container with the rock, stop
+it, then give its data to `_daemon_`:
+
+```bash
+docker run --rm --user 0 \
+  -v opensearch-data:/usr/share/opensearch/data \
+  --entrypoint chown opensearch:"${version}" \
+  -R 584792:584792 /usr/share/opensearch/data
+```
+
+For a host directory: `sudo chown -R 584792:584792 <directory>`. Otherwise, the
+node fails with an `AccessDeniedException` on the data directory (see
+[Logs](#logs)). The indices and the security index, so the users and their
+passwords, are kept. To go back to the upstream image, give the data back to
+the user 1000.
+
+### Heap dumps
+
+On a Java heap exhaustion, OpenSearch writes a heap dump to
+`/usr/share/opensearch/data/java_heapdump.hprof`, next to the indices: mount a
+volume on the data directory to keep it when the container is recreated. The
+JVM keeps the first dump and refuses to overwrite it, so restarts on repeated
+out of memory errors cannot fill the disk: copy it out and remove it after
+investigation to allow another one. A dump is as large as the heap and can
+contain credentials and document contents: keep it private.
+
+```bash
+docker cp <container>:/usr/share/opensearch/data/java_heapdump.hprof .
+docker exec <container> rm /usr/share/opensearch/data/java_heapdump.hprof
+```
+
+The location does not follow `path.data`. To keep the dumps in another
+directory, override it in `OPENSEARCH_JAVA_OPTS`. The directory needs room for
+one dump, and must be writable by the `_daemon_` user only:
+
+```bash
+mkdir -m 700 diagnostics
+sudo chown 584792:584792 diagnostics
+docker run ... \
+  -v ./diagnostics:/diagnostics \
+  -e OPENSEARCH_JAVA_OPTS="-XX:HeapDumpPath=/diagnostics/java_heapdump.hprof" \
+  opensearch:"${version}"
 ```
 
 ### Testing a multi nodes deployment:
