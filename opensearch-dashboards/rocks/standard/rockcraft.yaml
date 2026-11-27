@@ -50,6 +50,8 @@ parts:
     stage:
       - "-opt/opensearch-dashboards"
       - "-config"
+      # The Prometheus exporter ships in the charmed rock only.
+      - "-usr/bin/prometheus-opensearch-dashboards-exporter"
     stage-packages:
       - util-linux
       - python3-venv

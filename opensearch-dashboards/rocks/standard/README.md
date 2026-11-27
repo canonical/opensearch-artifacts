@@ -8,7 +8,7 @@ This repository contains the packaging metadata for creating the OpenSearch Dash
 
 ## Supported Platforms
 
-The rock is built for `amd64` and `arm64` architectures. Use `rockcraft pack` on a host matching the target architecture, or pass `--platform` to cross-build (e.g. `rockcraft pack --platform arm64`).
+The rock is built for `amd64` and `arm64` architectures. Build it with `rockcraft pack` on a host matching the target architecture.
 
 ## Rock Usage
 
