@@ -74,6 +74,60 @@ function set_yaml_prop() {
 }
 
 
+function edit_yaml_setting() {
+    local target_file="${1}" key="${2}" operation="${3}"
+    shift 3
+    "${SNAP}"/usr/bin/yq -y -i --arg k "${key}" "$@" '
+        [paths | select(all(.[]; type == "string") and join(".") == $k)] as $paths
+        | (if $paths | length > 0 then getpath($paths[-1]) else null end) as $old
+        | delpaths($paths)
+        | '"${operation}" "${target_file}"
+}
+
+# Sets a setting to a string, e.g. set_yaml_setting f cluster.name "a,b"
+function set_yaml_setting() {
+    # core24's yq argument parser mistakes a string starting with -- for an
+    # option, even after --arg. JSON quoting keeps it a literal string.
+    local value
+    value="$("${SNAP}"/usr/bin/jq -cn --arg v "${3}" '$v')" || return 1
+    edit_yaml_setting "${1}" "${2}" '.[$k] = $v' --argjson v "${value}"
+}
+
+# Sets a setting to a JSON value, e.g. set_yaml_setting_json f node.roles '[]'
+function set_yaml_setting_json() {
+    edit_yaml_setting "${1}" "${2}" '.[$k] = $v' --argjson v "${3}"
+}
+
+# Removes every spelling of a setting
+function remove_yaml_setting() {
+    edit_yaml_setting "${1}" "${2}" '.'
+}
+
+# Read the effective spelling, including nested and dotted settings.
+function get_yaml_prop() {
+    "${SNAP}"/usr/bin/yq -r --arg k "${2}" '
+        [paths | select(all(.[]; type == "string") and join(".") == $k)] as $paths
+        | if $paths | length > 0 then getpath($paths[-1]) else empty end
+    ' "${1}"
+}
+
+function set_yaml_list() {
+    local target_file="${1}" key="${2}" item
+    shift 2
+    set_yaml_setting_json "${target_file}" "${key}" '[]'
+    for item in "$@"; do
+        add_yaml_list_item "${target_file}" "${key}" "${item}"
+    done
+}
+
+# Keep peer DNs intact when renewing this node's certificate.
+function add_yaml_list_item() {
+    edit_yaml_setting "${1}" "${2}" \
+        '.[$k] = (($old // []) | (if type == "array" then . else [.] end)
+                   | if any(.[]; . == $v) then . else . + [$v] end)' --arg v "${3}"
+}
+
+
 #function set_python_prop () {
 #    python3 \
 #        "${OPS_ROOT}"/helpers/conf-setter.py \

@@ -1,0 +1,70 @@
+summary: OpenSearch Standard Snap Smoke Test
+
+execute: |
+  # The snap is not started on install: configure it, start it, then
+  # initialize the security index, as documented in the README.
+
+  # Legacy flags
+  opensearch.setup \
+    --node-name cm0 \
+    --node-roles cluster_manager,data \
+    --tls-init-setup yes \
+    --tls-priv-key-root-pass root1234 \
+    --tls-priv-key-admin-pass admin1234 \
+    --tls-priv-key-node-pass node1234
+
+  # -E settings, as upstream
+  opensearch.setup -Enode.attr.smoke=yes
+
+  snap start opensearch.daemon
+
+  URL=https://localhost:9200
+
+  # Wait for the REST layer: it answers 503 until the security index exists
+  retry=0
+  until [ "$(curl -sk -o /dev/null -w '%{http_code}' "$URL")" != "000" ]; do
+    retry=$((retry + 1))
+    if [ $retry -ge 60 ]; then
+      echo "OpenSearch did not start in time"
+      snap logs opensearch.daemon -n=50 || true
+      exit 1
+    fi
+    sleep 2
+  done
+
+  opensearch.security-init --tls-priv-key-admin-pass admin1234
+
+  retry=0
+  until [ "$(curl -sk -o /dev/null -w '%{http_code}' "$URL" \
+    -u admin:admin)" = "200" ]; do
+    retry=$((retry + 1))
+    if [ $retry -ge 60 ]; then
+      echo "The security index was not initialized in time"
+      snap logs opensearch.daemon -n=50 || true
+      exit 1
+    fi
+    sleep 2
+  done
+
+  snap run opensearch.test-node-up --node-name cm0
+  snap run opensearch.test-cluster-health-green
+  snap run opensearch.test-security-index-created
+
+  # The -E setting is applied
+  curl -sk "$URL/_cat/nodeattrs?h=attr,value" -u admin:admin \
+    | grep -E '^smoke +yes$'
+
+  # All the bundled plugins are shipped
+  plugins=$(curl -sk "$URL/_cat/plugins?h=component" -u admin:admin)
+  echo "$plugins"
+  for p in opensearch-security opensearch-performance-analyzer \
+      repository-s3 repository-azure repository-gcs prometheus-exporter; do
+    if ! echo "$plugins" | grep -qx "$p"; then
+      echo "FAIL: ${p} should be shipped"
+      exit 1
+    fi
+  done
+  if [ "$(echo "$plugins" | wc -l)" -lt 20 ]; then
+    echo "FAIL: expected at least 20 plugins"
+    exit 1
+  fi
