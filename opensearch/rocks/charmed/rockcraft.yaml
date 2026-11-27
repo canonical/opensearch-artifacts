@@ -154,6 +154,14 @@ parts:
       # --- JVM options ---
       JVM_OPTS="${PRIME_CONF_DIR}/jvm.options"
       JAVA_LIBRARY_PATH="${KNN_LIB_DIR}:/usr/java/packages/lib:/usr/lib64:/lib64:/lib:/usr/lib"
+
+      # Upstream dumps the heap to "data", relative to OPENSEARCH_HOME (the
+      # bin scripts' cwd), i.e. the image layer: use the logs volume instead.
+      HEAP_DUMP="/var/log/opensearch/java_heapdump.hprof"
+      sed -i "s@^-XX:HeapDumpPath=data\$@-XX:HeapDumpPath=${HEAP_DUMP}@" \
+          "${JVM_OPTS}"
+      grep -q "^-XX:HeapDumpPath=${HEAP_DUMP}\$" "${JVM_OPTS}"
+
       SSL_OPT="-Djavax.net.ssl.trustStore="
       # Fixing yaml lint error line
       echo "$SSL_OPT${CONTAINER_CONF_DIR}/certificates/cacerts.p12" \

@@ -55,14 +55,14 @@ because charmed version does not set defaults to these values compared to non-ch
 ```
 version=$(yq .version rockcraft.yaml)
 base=$(yq .base rockcraft.yaml)
-docker pull ghcr.io/canonical/opensearch:${version}-${base#*@}_edge
+docker pull ghcr.io/canonical/opensearch-charmed:${version}-${base#*@}_edge
 
 opensearch_cont=$(docker run -d --rm \
     --name cm0 \
     -p 127.0.0.1:9200:9200 \
     -e NODE_NAME=cm0 \
     -e INITIAL_CM_NODES=cm0 \
-    ghcr.io/canonical/opensearch:${version}-${base#*@}_edge
+    ghcr.io/canonical/opensearch-charmed:${version}-${base#*@}_edge
 )
 opensearch_cont_ip=$(docker inspect -f '{{ .NetworkSettings.IPAddress }}' "${opensearch_cont}")
 
