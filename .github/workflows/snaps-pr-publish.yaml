@@ -40,21 +40,10 @@ jobs:
           sudo iptables -P FORWARD ACCEPT
           sudo snap install snapcraft --classic
 
-      # `snapcraft test` packs the snap and runs its spread suites. A snap
-      # without spread tests yet is only packed, so it is still published.
       - name: snapcraft test
         id: test
         working-directory: ${{ matrix.snap.path }}
-        env:
-          SNAP_PATH: ${{ matrix.snap.path }}
-        run: |
-          if [ -f spread.yaml ]; then
-            step="test"
-          else
-            echo "::warning::No spread.yaml in ${SNAP_PATH}: packing the snap without testing it."
-            step="pack"
-          fi
-          sudo --user "$USER" --preserve-env --preserve-env=PATH -- env -- CI=1 SNAPCRAFT_BUILD_INFO=1 snapcraft "${step}"
+        run: sudo --user "$USER" --preserve-env --preserve-env=PATH -- env -- CI=1 SNAPCRAFT_BUILD_INFO=1 snapcraft test
 
       - name: Snapcraft logs
         if: ${{ success() || (failure() && steps.test.outcome == 'failure') }}

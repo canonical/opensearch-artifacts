@@ -1,0 +1,250 @@
+summary: OpenSearch Dashboards Snap Smoke Test
+
+execute: |
+  snap_name="opensearch-dashboards"
+  daemon="${snap_name}.opensearch-dashboards-daemon"
+  exporter="${snap_name}.exporter-daemon"
+  status_url="http://localhost:5601/api/status"
+  expected_version="$(yq -r '.version' "${PROJECT_PATH}/snap/snapcraft.yaml")"
+
+  if [ -z "${expected_version}" ] || [ "${expected_version}" = "null" ]; then
+    echo "FAIL: could not read 'version' from snapcraft.yaml"
+    exit 1
+  fi
+
+  dump_diagnostics() {
+    snap services "${snap_name}" || true
+    snap logs "${snap_name}" -n=50 || true
+    snap logs opensearch.daemon -n=50 || true
+  }
+
+  # --- The daemons are not started at install time -------------------------
+  for service in "${daemon}" "${exporter}"; do
+    if ! snap services "${service}" \
+        | grep -qE "^${service} +disabled +inactive"; then
+      echo "FAIL: ${service} was started at install time"
+      dump_diagnostics
+      exit 1
+    fi
+  done
+
+  # --- Bootstrap the OpenSearch backend ------------------------------------
+  # The kernel parameters are set by the suite's prepare-each: the 2/edge
+  # OpenSearch snap fails to set them itself ($SNAP/sbin/sysctl is missing).
+  snap set opensearch set-sysctl-props=no
+
+  snap run opensearch.setup \
+    --node-name cm0 \
+    --node-roles cluster_manager,data \
+    --tls-init-setup yes \
+    --tls-priv-key-root-pass changeit \
+    --tls-priv-key-admin-pass changeit \
+    --tls-priv-key-node-pass changeit
+
+  snap start opensearch.daemon
+
+  retry=0
+  until curl -sk https://localhost:9200 >/dev/null 2>&1; do
+    retry=$((retry + 1))
+    if [ "${retry}" -ge 90 ]; then
+      echo "FAIL: OpenSearch backend did not become ready in time"
+      dump_diagnostics
+      exit 1
+    fi
+    sleep 2
+  done
+
+  snap run opensearch.security-init --tls-priv-key-admin-pass changeit
+
+  retry=0
+  until [ "$(curl -sk -o /dev/null -w '%{http_code}' \
+    https://localhost:9200/.opendistro_security -u admin:admin)" = "200" ]; do
+    retry=$((retry + 1))
+    if [ "${retry}" -ge 30 ]; then
+      echo "FAIL: security index was not created in time"
+      dump_diagnostics
+      exit 1
+    fi
+    sleep 2
+  done
+
+  os_resp="$(curl -sk https://localhost:9200 -u admin:admin)"
+  echo "Backend version: $(echo "${os_resp}" | jq -r '.version.number')"
+
+  # --- Point the snap at the OpenSearch backend ----------------------------
+  # The configuration stays in the revision's data, as in the previous
+  # revisions.
+  conf="/var/snap/${snap_name}/current/etc/opensearch-dashboards"
+  conf="${conf}/opensearch_dashboards.yml"
+  os_yq="/snap/${snap_name}/current/usr/bin/yq"
+
+  # The node certificate is only valid for the node name: only check that it
+  # is signed by the OpenSearch CA.
+  ca="/var/snap/opensearch/current/etc/opensearch/certificates/root-ca.pem"
+  snap run "${snap_name}.setup" \
+    --opensearch.hosts="localhost" \
+    --opensearch-ca="$(cat "${ca}")" \
+    --opensearch.ssl.verificationMode=certificate \
+    --opensearch.username=kibanaserver \
+    --opensearch.password=kibanaserver \
+    --server.host=0.0.0.0
+
+  echo "=== opensearch_dashboards.yml ==="
+  cat "${conf}"
+
+  if [ "$("${os_yq}" -c '."opensearch.hosts"' "${conf}")" != \
+      '["https://localhost:9200"]' ]; then
+    echo "FAIL: opensearch.hosts was not set to https://localhost:9200"
+    exit 1
+  fi
+
+  ca_file="$("${os_yq}" -r '."opensearch.ssl.certificateAuthorities"[0]' \
+    "${conf}")"
+  if ! cmp -s "${ca}" "${ca_file}" || \
+      [ "$("${os_yq}" -r '."opensearch.ssl.verificationMode"' "${conf}")" \
+        != "certificate" ]; then
+    echo "FAIL: the OpenSearch CA was not configured"
+    exit 1
+  fi
+
+  # Configuring does not start the daemons.
+  if ! snap services "${daemon}" | grep -qE "^${daemon} +disabled +inactive"
+  then
+    echo "FAIL: ${daemon} was started by the setup application"
+    exit 1
+  fi
+
+  # --- Start Dashboards ----------------------------------------------------
+  snap start "${snap_name}"
+
+  status_resp=""
+  resp=""
+  retry=0
+  while [ "${retry}" -lt 150 ]; do
+    resp="$(curl -s --max-time 5 -u admin:admin "${status_url}" || true)"
+    state="$(echo "${resp}" | jq -r '.status.overall.state // empty' \
+      2>/dev/null || true)"
+    if [ "${state}" = "green" ] || [ "${state}" = "yellow" ]; then
+      status_resp="${resp}"
+      break
+    fi
+    retry=$((retry + 1))
+    sleep 2
+  done
+  if [ -z "${status_resp}" ]; then
+    echo "FAIL: OpenSearch Dashboards did not become ready in time"
+    echo "Last response: ${resp}"
+    dump_diagnostics
+    exit 1
+  fi
+  echo "Server responded: ${status_resp}"
+
+  services="$(snap services "${snap_name}")"
+  echo "${services}"
+  for service in opensearch-dashboards-daemon exporter-daemon; do
+    pattern="^${snap_name}\.${service} +[a-z]+ +active"
+    if ! echo "${services}" | grep -qE "${pattern}"; then
+      echo "FAIL: snap service '${service}' is not active"
+      dump_diagnostics
+      exit 1
+    fi
+  done
+
+  manifest="/snap/${snap_name}/current/usr/share/opensearch-dashboards"
+  manifest="${manifest}/manifest.yml"
+  snap_version="$(snap list "${snap_name}" | awk 'NR == 2 {print $2}')"
+  workload_version="$(yq -r '.build.version' "${manifest}")"
+
+  echo "snapcraft.yaml version: ${expected_version}"
+  echo "installed snap version: ${snap_version}"
+  echo "workload version:       ${workload_version}"
+
+  if [ "${snap_version}" != "${expected_version}" ]; then
+    echo "FAIL: installed snap is '${snap_version}' but snapcraft.yaml" \
+      "declares '${expected_version}'"
+    exit 1
+  fi
+
+  if [ "${workload_version}" != "${expected_version}" ]; then
+    echo "FAIL: the OpenSearch Dashboards workload is" \
+      "'${workload_version}' but snapcraft.yaml declares" \
+      "'${expected_version}'"
+    exit 1
+  fi
+
+  # --- Integration: Dashboards must be talking to OpenSearch ---------------
+  dashboards_version="$(echo "${status_resp}" \
+    | jq -r '.version.number // empty')"
+  if [ "${dashboards_version}" != "${expected_version}" ]; then
+    echo "FAIL: /api/status reports version '${dashboards_version}'" \
+      "!= ${expected_version}."
+    exit 1
+  fi
+  echo "Dashboards reports version ${dashboards_version} via /api/status"
+
+  # The security plugin redirects unauthenticated browsers to the login page.
+  root_resp="$(curl -s -i --max-time 10 http://localhost:5601)"
+  if ! echo "${root_resp}" | grep -q "302 Found"; then
+    echo "FAIL: Dashboards did not redirect (302) on /."
+    echo "${root_resp}" | head -5
+    exit 1
+  fi
+  echo "Dashboards redirects unauthenticated requests"
+
+  # Valid credentials must authenticate against the OpenSearch backend.
+  if ! curl -s -i -k -XPOST http://localhost:5601/auth/login \
+      --max-time 10 \
+      -H 'Accept: application/json' \
+      -H 'Content-Type: application/json' \
+      -H 'osd-xsrf:true' \
+      -d '{"username":"kibanaserver","password":"kibanaserver"}' \
+      | grep -q "200 OK"; then
+    echo "FAIL: authentication with valid credentials did not return 200."
+    dump_diagnostics
+    exit 1
+  fi
+  echo "Authentication with valid credentials succeeded"
+
+  logfile="/var/snap/${snap_name}/common/var/log/opensearch-dashboards"
+  logfile="${logfile}/opensearch_dashboards.log"
+  if ! test -s "${logfile}"; then
+    echo "FAIL: ${logfile} is missing or empty."
+    ls -l "$(dirname "${logfile}")" || true
+    exit 1
+  fi
+  echo "Dashboards is writing to ${logfile}"
+
+  # --- The Prometheus exporter serves metrics ------------------------------
+  retry=0
+  until curl -sf --max-time 5 http://localhost:9684/metrics \
+      | grep -q '^# HELP '; do
+    retry=$((retry + 1))
+    if [ "${retry}" -ge 60 ]; then
+      echo "FAIL: the Prometheus exporter does not serve metrics."
+      curl -s --max-time 5 http://localhost:9684/metrics | head -20 || true
+      dump_diagnostics
+      exit 1
+    fi
+    sleep 2
+  done
+  echo "The Prometheus exporter serves metrics"
+
+  # --- Keystore ------------------------------------------------------------
+  snap run "${snap_name}.keystore" create
+  echo "kibanaserver" \
+    | snap run "${snap_name}.keystore" add --stdin opensearch.password
+  if ! snap run "${snap_name}.keystore" list \
+      | grep -qx "opensearch.password"; then
+    echo "FAIL: opensearch.password is not in the keystore."
+    exit 1
+  fi
+  keystore="/var/snap/${snap_name}/current/etc/opensearch-dashboards"
+  keystore="${keystore}/opensearch_dashboards.keystore"
+  if [ ! -s "${keystore}" ] || \
+      [ "$(stat -c '%a' "${keystore}")" != "600" ]; then
+    echo "FAIL: the keystore ${keystore} is missing or readable by others."
+    exit 1
+  fi
+  echo "The keystore is managed in ${keystore}"
+
+  echo "All smoke tests passed."
